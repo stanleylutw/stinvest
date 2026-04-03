@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>投資分析與總覽</title>
+  <style>
+    :root {
+      --bg: #f4f6ef;
+      --ink: #1d2939;
+      --muted: #5b6676;
+      --surface: #fffdfa;
+      --line: #dcd8cf;
+      --gain: #ce3a2b;
+      --loss: #1a8f4d;
+      --accent: #005f73;
+      --accent-soft: #d7edee;
+      --sun: #f4a261;
+      --violet: #5e548e;
+      --card-shadow: 0 10px 30px rgba(56, 56, 56, 0.07);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background:
+        radial-gradient(1100px 600px at -10% -20%, #f6e7d8 0%, transparent 60%),
+        radial-gradient(900px 450px at 100% 0%, #d9eef0 0%, transparent 55%),
+        var(--bg);
+    }
+
+    .wrap {
+      width: min(1200px, 94vw);
+      margin: 2.4rem auto 3rem;
+    }
+
+    .hero {
+      background: linear-gradient(125deg, #004e64, #0a9396);
+      color: #f4fbfc;
+      border-radius: 1rem;
+      padding: 1.4rem 1.5rem;
+      box-shadow: var(--card-shadow);
+      animation: enter 0.5s ease-out;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+    }
+
+    .hero p {
+      margin: 0.65rem 0 0;
+      opacity: 0.94;
+    }
+
+    .statusline {
+      margin-top: 0.65rem;
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      font-size: 0.88rem;
+      opacity: 0.95;
+    }
+
+    .kpis {
+      margin-top: 1rem;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(110px, 1fr));
+      gap: 0.8rem;
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 0.9rem;
+      padding: 0.75rem 0.8rem;
+      box-shadow: var(--card-shadow);
+      animation: enter 0.48s ease-out;
+    }
+
+    .kpi small {
+      color: var(--muted);
+      display: block;
+      margin-bottom: 0.35rem;
+    }
+
+    .kpi b {
+      font-size: 1.2rem;
+      line-height: 1.2;
+    }
+
+    .gain {
+      color: var(--gain);
+    }
+
+    .loss {
+      color: var(--loss);
+    }
+
+    .grid {
+      margin-top: 1rem;
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1.2fr 1fr;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      padding: 1rem;
+      box-shadow: var(--card-shadow);
+      animation: enter 0.55s ease-out;
+    }
+
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.08rem;
+      color: #233142;
+    }
+
+    .alloc-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 60px;
+      gap: 0.7rem;
+      align-items: center;
+      margin-bottom: 0.45rem;
+    }
+
+    .bar {
+      background: #ebe8e0;
+      border-radius: 999px;
+      height: 11px;
+      overflow: hidden;
+    }
+
+    .bar > span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .c1 { background: linear-gradient(90deg, #005f73, #0a9396); }
+    .c2 { background: linear-gradient(90deg, #9c6644, #dda15e); }
+    .c3 { background: linear-gradient(90deg, #5e548e, #9f86c0); }
+    .c4 { background: linear-gradient(90deg, #2a9d8f, #8ac926); }
+    .c5 { background: linear-gradient(90deg, #6c757d, #adb5bd); }
+
+    .notes li {
+      margin: 0 0 0.45rem;
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 0.52rem 0.46rem;
+      border-bottom: 1px solid #ece9e1;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:first-child, td:first-child,
+    th:nth-child(2), td:nth-child(2) {
+      text-align: left;
+    }
+
+    thead th {
+      color: #3f4d5f;
+      font-weight: 700;
+      background: #f5f2ec;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    .footer {
+      margin-top: 1rem;
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .empty-row td {
+      text-align: center !important;
+      color: var(--muted);
+    }
+
+    .table-tools {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.55rem;
+      align-items: center;
+      margin-bottom: 0;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+    }
+
+    .table-tools select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.35rem 0.5rem;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.65rem;
+      flex-wrap: nowrap;
+    }
+
+    .section-head h2 {
+      margin: 0;
+    }
+
+    @keyframes enter {
+      from {
+        transform: translateY(9px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .kpis {
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+    }
+
+    @media (max-width: 640px) {
+      .wrap {
+        width: 95vw;
+      }
+
+      .kpis {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+
+      .hero {
+        padding: 1.2rem;
+      }
+
+      .section-head {
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>投資分析與總覽</h1>
+      <p>2026 年投資總表視圖 | 以「全帳戶」為核心，快速看懂報酬、現金流與配置</p>
+      <div class="statusline">
+        <span>狀態：<strong id="statusText">待載入</strong></span>
+        <span>上次更新：<strong id="updatedAt">--</strong></span>
+      </div>
+    </section>
+
+    <section class="kpis">
+      <article class="kpi"><small>總市值</small><b id="kpiMarketValue">--</b></article>
+      <article class="kpi"><small>持有成本</small><b id="kpiCost">--</b></article>
+      <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b></article>
+      <article class="kpi"><small>累積配息</small><b id="kpiDividend">--</b></article>
+      <article class="kpi"><small>含息損益</small><b id="kpiProfitWithDividend">--</b></article>
+      <article class="kpi"><small>預估月配額</small><b id="kpiMonthlyIncome">--</b></article>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>資產配置（分帳戶 / 類別）</h2>
+        <div id="allocRows">
+          <div class="alloc-row">
+            <span>待載入</span>
+            <div class="bar"><span class="c1" style="width: 0%;"></span></div>
+            <strong>--</strong>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>儀表重點與提醒</h2>
+        <ul class="notes">
+          <li>將「含息損益率」與「未含息損益率」並排顯示，避免只看價差。</li>
+          <li>可設定單一標的最大比重警示，例如超過 12% 需檢視。</li>
+          <li>月配額用行事曆視圖呈現，提前看現金流缺口。</li>
+          <li>下跌超過 -8% 或偏離目標配置超過 4% 時，自動加入待辦。</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>持股明細（即時）</h2>
+        <div class="table-tools">
+          <label for="sortBy">排序</label>
+          <select id="sortBy">
+            <option value="sheet" selected>Google Sheet 原始順序</option>
+            <option value="marketValue">市值</option>
+            <option value="profit">損益</option>
+            <option value="profitRate">損益率</option>
+            <option value="dividendRate">配息率</option>
+            <option value="monthlyIncome">月配額</option>
+            <option value="price">股價</option>
+          </select>
+          <select id="sortDir">
+            <option value="desc">由大到小</option>
+            <option value="asc">由小到大</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead id="holdingsHead"></thead>
+          <tbody id="holdingsBody">
+            <tr class="empty-row">
+              <td colspan="1">載入中...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer">
+      <span>頁面目標：先做 MVP 的總覽 + 明細 + 配息，後續再串接自動匯入</span>
+      <span id="versionText">版本：--</span>
+    </div>
+  </main>
+  <script>
+    const PROD_API_BASE = "https://your-backend-domain.com";
+    const API_BASE = location.hostname === "localhost" ? "http://localhost:3000" : PROD_API_BASE;
+    const API_URL = `${API_BASE}/api/portfolio`;
+    const REFRESH_MS = 60 * 1000;
+
+    const statusText = document.getElementById("statusText");
+    const updatedAt = document.getElementById("updatedAt");
+    const versionText = document.getElementById("versionText");
+    const holdingsHead = document.getElementById("holdingsHead");
+    const holdingsBody = document.getElementById("holdingsBody");
+    const allocRows = document.getElementById("allocRows");
+    const sortByEl = document.getElementById("sortBy");
+    const sortDirEl = document.getElementById("sortDir");
+
+    const kpiEls = {
+      marketValue: document.getElementById("kpiMarketValue"),
+      cost: document.getElementById("kpiCost"),
+      profit: document.getElementById("kpiProfit"),
+      dividend: document.getElementById("kpiDividend"),
+      profitWithDividend: document.getElementById("kpiProfitWithDividend"),
+      monthlyIncome: document.getElementById("kpiMonthlyIncome")
+    };
+
+    const barClasses = ["c1", "c2", "c3", "c4", "c5"];
+    let latestHoldings = [];
+    let visibleColumns = [];
+
+    const idx = {
+      name: 1,
+      title: 2,
+      profit: 3,
+      profitRate: 4,
+      price: 5,
+      move: 6,
+      marketValue: 13,
+      dividendRate: 14,
+      monthlyIncome: 18,
+      holdingCost: 9,
+      accDividend: 10,
+      profitWithDividend: 11,
+      profitWithDividendRate: 12
+    };
+
+    function toNumber(text) {
+      if (!text) return NaN;
+      const normalized = String(text).replace(/,/g, "").trim();
+      const matched = normalized.match(/-?\d+(\.\d+)?/);
+      return matched ? Number(matched[0]) : NaN;
+    }
+
+    function currency(text) {
+      const n = toNumber(text);
+      return Number.isFinite(n) ? "$" + n.toLocaleString("en-US") : "--";
+    }
+
+    function classByValue(text) {
+      const n = toNumber(text);
+      if (!Number.isFinite(n)) return "";
+      if (n > 0) return "gain";
+      if (n < 0) return "loss";
+      return "";
+    }
+
+    function classByValueBlackPositive(text) {
+      const n = toNumber(text);
+      if (!Number.isFinite(n)) return "";
+      if (n < 0) return "loss";
+      return "";
+    }
+
+    function td(value, className = "") {
+      return `<td class="${className}">${value || "--"}</td>`;
+    }
+
+    function cleanHeader(text) {
+      return String(text || "").replace(/^\*+/, "").trim();
+    }
+
+    function isHiddenHeader(text) {
+      return String(text || "").trim().startsWith("*");
+    }
+
+    function renderTableHeaders(headerRow) {
+      if (!headerRow || !headerRow.length) return;
+      const cols = [];
+      for (let i = 1; i < headerRow.length; i += 1) {
+        const raw = headerRow[i];
+        const label = cleanHeader(raw);
+        if (!label || isHiddenHeader(raw)) continue;
+        cols.push({ index: i, label });
+      }
+      visibleColumns = cols;
+      holdingsHead.innerHTML = `<tr><th>帳戶</th>${cols.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
+      rebuildSortOptions();
+    }
+
+    function visibleColumnCount() {
+      return Math.max(visibleColumns.length + 1, 1);
+    }
+
+    function rebuildSortOptions() {
+      const prev = sortByEl.value || "sheet";
+      const options = [
+        `<option value="sheet">Google Sheet 原始順序</option>`,
+        ...visibleColumns.map((c) => `<option value="${c.index}">${c.label}</option>`)
+      ];
+      sortByEl.innerHTML = options.join("");
+      const values = new Set(["sheet", ...visibleColumns.map((c) => String(c.index))]);
+      sortByEl.value = values.has(prev) ? prev : "sheet";
+    }
+
+    function renderAlloc(groups, holdings) {
+      const accountTotals = [];
+      groups.forEach((r) => {
+        const account = String(r[idx.name] || "").replace(/^#/, "").trim();
+        const value = toNumber(r[idx.marketValue]) || 0;
+        if (account && value > 0) {
+          accountTotals.push({ account, value });
+        }
+      });
+
+      if (!accountTotals.length) {
+        const map = new Map();
+        holdings.forEach((h) => {
+          const value = toNumber(h.cells[idx.marketValue]) || 0;
+          if (value > 0) map.set(h.account, (map.get(h.account) || 0) + value);
+        });
+        map.forEach((value, account) => accountTotals.push({ account, value }));
+      }
+
+      if (!accountTotals.length) {
+        allocRows.innerHTML = `
+          <div class="alloc-row">
+            <span>無資料</span>
+            <div class="bar"><span class="c1" style="width:0%"></span></div>
+            <strong>0%</strong>
+          </div>`;
+        return;
+      }
+
+      accountTotals.sort((a, b) => b.value - a.value);
+      const total = accountTotals.reduce((sum, x) => sum + x.value, 0);
+      allocRows.innerHTML = accountTotals.map((x, i) => {
+        const p = total > 0 ? (x.value / total) * 100 : 0;
+        const klass = barClasses[i % barClasses.length];
+        return `
+          <div class="alloc-row">
+            <span>${x.account}</span>
+            <div class="bar"><span class="${klass}" style="width:${p.toFixed(1)}%"></span></div>
+            <strong>${p.toFixed(1)}%</strong>
+          </div>`;
+      }).join("");
+    }
+
+    function renderHoldings(rows) {
+      if (!rows.length) {
+        holdingsBody.innerHTML = `<tr class="empty-row"><td colspan="${visibleColumnCount()}">查無持股資料</td></tr>`;
+        return;
+      }
+
+      const sortBy = sortByEl.value;
+      const sortDir = sortDirEl.value;
+      const list = [...rows];
+
+      if (sortBy !== "sheet") {
+        list.sort((a, b) => {
+          const colIndex = Number(sortBy);
+          const av = toNumber(a.cells[colIndex]);
+          const bv = toNumber(b.cells[colIndex]);
+          const safeA = Number.isFinite(av) ? av : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+          const safeB = Number.isFinite(bv) ? bv : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+          return sortDir === "asc" ? safeA - safeB : safeB - safeA;
+        });
+      } else {
+        list.sort((a, b) => a.sheetOrder - b.sheetOrder);
+      }
+
+      holdingsBody.innerHTML = list.map((row) => {
+        const cols = [td(row.account || "--")];
+        cols.push(...visibleColumns.map((col) => {
+          const value = row.cells[col.index] || "--";
+          const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
+          if (!needColor) return td(value);
+          const isBlackPositive = [idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
+          return td(value, isBlackPositive ? classByValueBlackPositive(value) : classByValue(value));
+        }));
+        return `<tr>${cols.join("")}</tr>`;
+      }).join("");
+    }
+
+    function renderKpis(summary) {
+      if (!summary) return;
+      kpiEls.marketValue.textContent = currency(summary[idx.marketValue]);
+      kpiEls.cost.textContent = currency(summary[idx.holdingCost]);
+      kpiEls.profit.textContent = currency(summary[idx.profit]);
+      kpiEls.dividend.textContent = currency(summary[idx.accDividend]);
+      kpiEls.profitWithDividend.textContent = currency(summary[idx.profitWithDividend]);
+      kpiEls.monthlyIncome.textContent = currency(summary[idx.monthlyIncome]);
+
+      kpiEls.profit.className = classByValue(summary[idx.profit]);
+      kpiEls.profitWithDividend.className = classByValueBlackPositive(summary[idx.profitWithDividend]);
+    }
+
+    function parseRows(data) {
+      const allRows = data?.valueRanges?.[0]?.values || [];
+      if (!allRows.length) return { headerRow: null, summary: null, groups: [], holdings: [] };
+      const headerRow = allRows[0] || [];
+      const rows = allRows.slice(1);
+      const summary = rows.find((r) => (r[idx.name] || "").trim() === "全帳戶") || null;
+      const groups = rows.filter((r) => String(r[idx.name] || "").startsWith("#"));
+
+      let currentGroup = "未分類";
+      const holdings = [];
+      let sheetOrder = 0;
+
+      rows.forEach((r) => {
+        const name = (r[idx.name] || "").trim();
+        const hasStarMarkedCell = r.some((cell) => String(cell || "").trim().startsWith("*"));
+        if (!name || name === "全帳戶") return;
+        if (name.startsWith("#")) {
+          currentGroup = name.replace(/^#/, "");
+          return;
+        }
+        // Skip title/helper rows: any cell in this row starts with "*".
+        if (hasStarMarkedCell) {
+          return;
+        }
+        if (!(r[idx.price] || r[idx.marketValue] || r[idx.profit])) return;
+
+        holdings.push({
+          sheetOrder: sheetOrder++,
+          account: currentGroup,
+          cells: r
+        });
+      });
+
+      return { headerRow, summary, groups, holdings };
+    }
+
+    function renderAutoVersion() {
+      const raw = document.lastModified;
+      const d = raw ? new Date(raw) : new Date();
+      if (Number.isNaN(d.getTime())) {
+        versionText.textContent = "版本：unknown";
+        return;
+      }
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      versionText.textContent = `版本：v${y}${m}${day}.${hh}${mm}（Auto）`;
+    }
+
+    async function loadData() {
+      statusText.textContent = "更新中...";
+      try {
+        const res = await fetch(API_URL, {
+          cache: "no-store",
+          credentials: "include"
+        });
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+        const data = await res.json();
+        const { headerRow, summary, groups, holdings } = parseRows(data);
+        latestHoldings = holdings;
+        renderTableHeaders(headerRow);
+        renderKpis(summary);
+        renderAlloc(groups, holdings);
+        renderHoldings(holdings);
+        statusText.textContent = "已更新";
+        updatedAt.textContent = new Date().toLocaleString("zh-TW");
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = "更新失敗";
+      }
+    }
+
+    renderAutoVersion();
+    sortByEl.addEventListener("change", () => renderHoldings(latestHoldings));
+    sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings));
+    loadData();
+    setInterval(loadData, REFRESH_MS);
+  </script>
+</body>
+</html>
