@@ -197,6 +197,45 @@
       color: var(--muted);
     }
 
+    .group-row td {
+      background: transparent;
+      border: 0;
+      padding: 8px 0 0;
+    }
+
+    .account-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.28rem 0.78rem;
+      border-radius: 14px 14px 0 0;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #334155;
+      border: 1px solid var(--group-border, #cfd6e2);
+      border-bottom: 0;
+      background: var(--group-bg, #e5e7eb);
+    }
+
+    .group-head-repeat td {
+      background: var(--group-bg, #e5e7eb);
+      color: #334155;
+      font-weight: 700;
+      border-bottom-color: var(--group-border, #d8dee8);
+    }
+
+    .subtotal-row td {
+      background: #f8fafc;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .group-gap td {
+      border: 0;
+      height: 10px;
+      padding: 0;
+      background: transparent;
+    }
+
     .table-tools {
       display: flex;
       justify-content: flex-end;
@@ -227,6 +266,78 @@
 
     .section-head h2 {
       margin: 0;
+    }
+
+    .collapsible-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.4rem;
+    }
+
+    .collapsible-toggle {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: #1f2937;
+      padding: 0;
+      text-align: left;
+      font: inherit;
+      font-weight: 700;
+      font-size: 1.08rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+
+    .collapse-icon {
+      color: #64748b;
+      font-size: 1rem;
+      transition: transform 0.2s ease;
+    }
+
+    .card.is-collapsed .collapsible-body {
+      display: none;
+    }
+
+    .card.is-collapsed .collapse-icon {
+      transform: rotate(-90deg);
+    }
+
+    .dist-chart-wrap {
+      border: 1px solid #e7e2d8;
+      border-radius: 12px;
+      background: #f3f4f6;
+      padding: 0.4rem;
+    }
+
+    .dist-chart-legend {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 0.15rem;
+      color: #334155;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .dist-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .dist-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    .dist-chart {
+      width: 100%;
+      overflow-x: auto;
     }
 
     @keyframes enter {
@@ -291,25 +402,42 @@
     </section>
 
     <section class="grid">
-      <article class="card">
-        <h2>資產配置（分帳戶 / 類別）</h2>
-        <div id="allocRows">
-          <div class="alloc-row">
-            <span>待載入</span>
-            <div class="bar"><span class="c1" style="width: 0%;"></span></div>
-            <strong>--</strong>
+      <article class="card is-collapsed">
+        <div class="collapsible-head">
+          <button class="collapsible-toggle" type="button" aria-expanded="false">
+            <span>資產配置（分帳戶 / 類別）</span>
+            <span class="collapse-icon">▾</span>
+          </button>
+        </div>
+        <div class="collapsible-body">
+          <div id="allocRows">
+            <div class="alloc-row">
+              <span>待載入</span>
+              <div class="bar"><span class="c1" style="width: 0%;"></span></div>
+              <strong>--</strong>
+            </div>
           </div>
         </div>
       </article>
 
-      <article class="card">
-        <h2>儀表重點與提醒</h2>
-        <ul class="notes">
-          <li>將「含息損益率」與「未含息損益率」並排顯示，避免只看價差。</li>
-          <li>可設定單一標的最大比重警示，例如超過 12% 需檢視。</li>
-          <li>月配額用行事曆視圖呈現，提前看現金流缺口。</li>
-          <li>下跌超過 -8% 或偏離目標配置超過 4% 時，自動加入待辦。</li>
-        </ul>
+      <article class="card is-collapsed">
+        <div class="collapsible-head">
+          <button class="collapsible-toggle" type="button" aria-expanded="false">
+            <span>投資分布圖（投資比例 vs 報酬率）</span>
+            <span class="collapse-icon">▾</span>
+          </button>
+        </div>
+        <div class="collapsible-body">
+          <div class="dist-chart-wrap">
+            <div class="dist-chart-legend">
+              <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#6aa0d1;"></span>投資比例</span>
+              <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#c8c8c8;"></span>報酬率</span>
+            </div>
+            <div class="dist-chart" id="distChart">
+              載入中...
+            </div>
+          </div>
+        </div>
       </article>
     </section>
 
@@ -364,6 +492,7 @@
     const allocRows = document.getElementById("allocRows");
     const sortByEl = document.getElementById("sortBy");
     const sortDirEl = document.getElementById("sortDir");
+    const distChart = document.getElementById("distChart");
 
     const kpiEls = {
       marketValue: document.getElementById("kpiMarketValue"),
@@ -376,6 +505,8 @@
 
     const barClasses = ["c1", "c2", "c3", "c4", "c5"];
     let latestHoldings = [];
+    let latestDistItems = [];
+    let latestGroupSummaries = new Map();
     let visibleColumns = [];
 
     const idx = {
@@ -443,7 +574,9 @@
         cols.push({ index: i, label });
       }
       visibleColumns = cols;
-      holdingsHead.innerHTML = `<tr><th>帳戶</th>${cols.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
+      // Use group-level repeated headers only; keep table-level thead empty
+      // to avoid duplicate header on the first account block.
+      holdingsHead.innerHTML = "";
       rebuildSortOptions();
     }
 
@@ -505,7 +638,109 @@
       }).join("");
     }
 
-    function renderHoldings(rows) {
+    function parseDistribution(data) {
+      const rows = data?.valueRanges?.[1]?.values || [];
+      if (!rows.length) return [];
+
+      const header = rows.find((r) => String(r[0] || "").trim() === "標的類別");
+      const costRow = rows.find((r) => String(r[0] || "").trim() === "成本");
+      const marketRow = rows.find((r) => String(r[0] || "").trim() === "現值");
+      const dividendRow = rows.find((r) => String(r[0] || "").trim() === "配息");
+      const weightRow = rows.find((r) => String(r[0] || "").trim() === "總投資佔比");
+      const pnlRow = rows.find((r) => String(r[0] || "").trim() === "淨損益");
+      const retRow = rows.find((r) => String(r[0] || "").trim() === "含息報酬率");
+
+      if (!header) return [];
+
+      const out = [];
+      for (let i = 1; i < header.length; i += 1) {
+        const name = String(header[i] || "").trim();
+        if (!name || name === "合計") continue;
+        out.push({
+          name,
+          cost: costRow?.[i] || "",
+          market: marketRow?.[i] || "",
+          dividend: dividendRow?.[i] || "",
+          weight: weightRow?.[i] || "",
+          pnl: pnlRow?.[i] || "",
+          ret: retRow?.[i] || ""
+        });
+      }
+      return out;
+    }
+
+    function renderDistribution(items) {
+      if (!items.length) {
+        distChart.textContent = "無第二分頁資料";
+        return;
+      }
+
+      const list = [...items];
+      const values = list.map((x) => ({
+        name: x.name,
+        weight: toNumber(x.weight) || 0,
+        ret: toNumber(x.ret) || 0
+      }));
+
+      const maxValue = Math.max(...values.map((x) => Math.max(x.weight, x.ret)), 0);
+      const yMax = Math.max(150, Math.ceil(maxValue / 10) * 10);
+      const tickStep = yMax >= 150 ? 50 : 20;
+      const ticks = [];
+      for (let t = 0; t <= yMax; t += tickStep) ticks.push(t);
+
+      const margin = { left: 34, right: 12, top: 14, bottom: 26 };
+      const barW = 10;
+      const barGap = 2;
+      const wrap = distChart.closest(".dist-chart-wrap");
+      const measuredWidth = Math.floor(
+        distChart.getBoundingClientRect().width ||
+        wrap?.getBoundingClientRect().width ||
+        0
+      );
+      const containerW = Math.max(380, measuredWidth);
+      const chartW = containerW;
+      const chartH = 190;
+      const plotH = chartH - margin.top - margin.bottom;
+      const plotW = chartW - margin.left - margin.right;
+      const n = Math.max(values.length, 1);
+
+      const y = (v) => margin.top + plotH * (1 - v / yMax);
+      const xCenter = (i) => margin.left + ((i + 0.5) / n) * plotW;
+
+      const gridLines = ticks.map((t) => `
+        <line x1="${margin.left}" y1="${y(t)}" x2="${chartW - margin.right}" y2="${y(t)}" stroke="#d6d9de" stroke-width="1" />
+        <text x="${margin.left - 6}" y="${y(t) + 3}" text-anchor="end" font-size="8" fill="#4b5563">${t}%</text>
+      `).join("");
+
+      const bars = values.map((v, i) => {
+        const cx = xCenter(i);
+        const wH = Math.max(0, Math.min(yMax, v.weight));
+        const rH = Math.max(0, Math.min(yMax, v.ret));
+        const wY = y(wH);
+        const rY = y(rH);
+        const wBarH = margin.top + plotH - wY;
+        const rBarH = margin.top + plotH - rY;
+        return `
+          <rect x="${cx - barW - barGap/2}" y="${wY}" width="${barW}" height="${wBarH}" rx="3" fill="#6aa0d1" />
+          <rect x="${cx + barGap/2}" y="${rY}" width="${barW}" height="${rBarH}" rx="3" fill="#c8c8c8" />
+          <text x="${cx - barW/2 - barGap/2}" y="${wY - 4}" text-anchor="middle" font-size="8" fill="#2e6fd0" font-weight="700">${Math.round(v.weight)}%</text>
+          <text x="${cx + barW/2 + barGap/2}" y="${rY - 4}" text-anchor="middle" font-size="8" fill="#9ca3af" font-weight="700">${Math.round(v.ret)}%</text>
+          <text x="${cx}" y="${margin.top + plotH + 12}" text-anchor="middle" font-size="8" fill="#111827">${v.name}</text>
+        `;
+      }).join("");
+
+      const svg = `
+        <svg width="${chartW}" height="${chartH}" viewBox="0 0 ${chartW} ${chartH}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="0" width="${chartW}" height="${chartH}" fill="#f3f4f6" />
+          ${gridLines}
+          <line x1="${margin.left}" y1="${margin.top + plotH}" x2="${chartW - margin.right}" y2="${margin.top + plotH}" stroke="#475569" stroke-width="1.5" />
+          ${bars}
+        </svg>
+      `;
+      distChart.innerHTML = svg;
+    }
+
+    function renderHoldings(rows, groupSummaries = new Map()) {
       if (!rows.length) {
         holdingsBody.innerHTML = `<tr class="empty-row"><td colspan="${visibleColumnCount()}">查無持股資料</td></tr>`;
         return;
@@ -513,32 +748,88 @@
 
       const sortBy = sortByEl.value;
       const sortDir = sortDirEl.value;
-      const list = [...rows];
+      const groupOrder = [];
+      const grouped = new Map();
+      rows.forEach((r) => {
+        const key = r.account || "未分類";
+        if (!grouped.has(key)) {
+          grouped.set(key, []);
+          groupOrder.push(key);
+        }
+        grouped.get(key).push(r);
+      });
 
-      if (sortBy !== "sheet") {
-        list.sort((a, b) => {
-          const colIndex = Number(sortBy);
-          const av = toNumber(a.cells[colIndex]);
-          const bv = toNumber(b.cells[colIndex]);
-          const safeA = Number.isFinite(av) ? av : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-          const safeB = Number.isFinite(bv) ? bv : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-          return sortDir === "asc" ? safeA - safeB : safeB - safeA;
+      const body = [];
+      const colspan = visibleColumnCount();
+      const sumCols = [idx.marketValue, idx.profit, idx.monthlyIncome, idx.profitWithDividend];
+      const groupPalette = [
+        { bg: "#e9f2ff", border: "#c6d8f2" },
+        { bg: "#e8f7ef", border: "#c7e8d4" },
+        { bg: "#fff5e6", border: "#f0dbb8" },
+        { bg: "#f1ecff", border: "#d9cef9" },
+        { bg: "#e8f7f8", border: "#c3e4e8" },
+        { bg: "#fff0f6", border: "#f3cde0" }
+      ];
+
+      groupOrder.forEach((account, groupIndex) => {
+        const items = [...grouped.get(account)];
+        const palette = groupPalette[groupIndex % groupPalette.length];
+        const rowStyle = `style="--group-bg:${palette.bg};--group-border:${palette.border};"`;
+
+        if (sortBy !== "sheet") {
+          items.sort((a, b) => {
+            const colIndex = Number(sortBy);
+            const av = toNumber(a.cells[colIndex]);
+            const bv = toNumber(b.cells[colIndex]);
+            const safeA = Number.isFinite(av) ? av : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+            const safeB = Number.isFinite(bv) ? bv : (sortDir === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+            return sortDir === "asc" ? safeA - safeB : safeB - safeA;
+          });
+        } else {
+          items.sort((a, b) => a.sheetOrder - b.sheetOrder);
+        }
+
+        body.push(`<tr class="group-row" ${rowStyle}><td colspan="${colspan}"><span class="account-tag">${account}</span></td></tr>`);
+        const repeatHeadCells = [td("帳戶")];
+        repeatHeadCells.push(...visibleColumns.map((col) => td(col.label)));
+        body.push(`<tr class="group-head-repeat" ${rowStyle}>${repeatHeadCells.join("")}</tr>`);
+
+        items.forEach((row) => {
+          const cols = [td(row.account || "--")];
+          cols.push(...visibleColumns.map((col) => {
+            const value = row.cells[col.index] || "--";
+            const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
+            if (!needColor) return td(value);
+            const isBlackPositive = [idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
+            return td(value, isBlackPositive ? classByValueBlackPositive(value) : classByValue(value));
+          }));
+          body.push(`<tr>${cols.join("")}</tr>`);
         });
-      } else {
-        list.sort((a, b) => a.sheetOrder - b.sheetOrder);
-      }
 
-      holdingsBody.innerHTML = list.map((row) => {
-        const cols = [td(row.account || "--")];
-        cols.push(...visibleColumns.map((col) => {
-          const value = row.cells[col.index] || "--";
-          const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
-          if (!needColor) return td(value);
-          const isBlackPositive = [idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
-          return td(value, isBlackPositive ? classByValueBlackPositive(value) : classByValue(value));
+        const summaryRow = groupSummaries.get(account) || null;
+        let subtotalCells = [td("小計")];
+        subtotalCells.push(...visibleColumns.map((col) => {
+          if (!sumCols.includes(col.index)) return "<td></td>";
+          const fromSheet = summaryRow ? summaryRow[col.index] : "";
+          const hasSheetValue = String(fromSheet || "").trim() !== "";
+          const sum = items.reduce((acc, r) => acc + (toNumber(r.cells[col.index]) || 0), 0);
+          const txt = hasSheetValue
+            ? String(fromSheet)
+            : (Number.isFinite(sum) ? sum.toLocaleString("en-US") : "--");
+          const needColor = [idx.profit, idx.profitWithDividend].includes(col.index);
+          if (!needColor) return td(txt);
+          const forColor = hasSheetValue ? String(fromSheet) : String(sum);
+          const klass = col.index === idx.profitWithDividend ? classByValueBlackPositive(forColor) : classByValue(forColor);
+          return td(txt, klass);
         }));
-        return `<tr>${cols.join("")}</tr>`;
-      }).join("");
+        body.push(`<tr class="subtotal-row">${subtotalCells.join("")}</tr>`);
+
+        if (groupIndex < groupOrder.length - 1) {
+          body.push(`<tr class="group-gap"><td colspan="${colspan}"></td></tr>`);
+        }
+      });
+
+      holdingsBody.innerHTML = body.join("");
     }
 
     function renderKpis(summary) {
@@ -556,11 +847,12 @@
 
     function parseRows(data) {
       const allRows = data?.valueRanges?.[0]?.values || [];
-      if (!allRows.length) return { headerRow: null, summary: null, groups: [], holdings: [] };
+      if (!allRows.length) return { headerRow: null, summary: null, groups: [], holdings: [], groupSummaries: new Map() };
       const headerRow = allRows[0] || [];
       const rows = allRows.slice(1);
       const summary = rows.find((r) => (r[idx.name] || "").trim() === "全帳戶") || null;
-      const groups = rows.filter((r) => String(r[idx.name] || "").startsWith("#"));
+      const groups = [];
+      const groupSummaries = new Map();
 
       let currentGroup = "未分類";
       const holdings = [];
@@ -569,11 +861,15 @@
       rows.forEach((r) => {
         const name = (r[idx.name] || "").trim();
         const hasStarMarkedCell = r.some((cell) => String(cell || "").trim().startsWith("*"));
-        if (!name || name === "全帳戶") return;
-        if (name.startsWith("#")) {
-          currentGroup = name.replace(/^#/, "");
+        const accountMarkerCell = r.find((cell) => String(cell || "").trim().startsWith("#"));
+        const accountMarker = accountMarkerCell ? String(accountMarkerCell).trim().replace(/^#/, "").trim() : "";
+        if (accountMarker) {
+          currentGroup = accountMarker;
+          groups.push(r);
+          groupSummaries.set(currentGroup, r);
           return;
         }
+        if (!name || name === "全帳戶") return;
         // Skip title/helper rows: any cell in this row starts with "*".
         if (hasStarMarkedCell) {
           return;
@@ -587,7 +883,7 @@
         });
       });
 
-      return { headerRow, summary, groups, holdings };
+      return { headerRow, summary, groups, holdings, groupSummaries };
     }
 
     function renderAutoVersion() {
@@ -616,12 +912,16 @@
           throw new Error(await res.text());
         }
         const data = await res.json();
-        const { headerRow, summary, groups, holdings } = parseRows(data);
+        const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
+        const distItems = parseDistribution(data);
         latestHoldings = holdings;
+        latestGroupSummaries = groupSummaries;
+        latestDistItems = distItems;
         renderTableHeaders(headerRow);
         renderKpis(summary);
         renderAlloc(groups, holdings);
-        renderHoldings(holdings);
+        renderDistribution(distItems);
+        renderHoldings(holdings, groupSummaries);
         statusText.textContent = "已更新";
         updatedAt.textContent = new Date().toLocaleString("zh-TW");
       } catch (err) {
@@ -631,8 +931,29 @@
     }
 
     renderAutoVersion();
-    sortByEl.addEventListener("change", () => renderHoldings(latestHoldings));
-    sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings));
+    document.querySelectorAll(".collapsible-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const card = btn.closest(".card");
+        if (!card) return;
+        card.classList.toggle("is-collapsed");
+        const expanded = !card.classList.contains("is-collapsed");
+        btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+        if (expanded && btn.textContent.includes("投資分布圖")) {
+          renderDistribution(latestDistItems);
+        }
+      });
+    });
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (latestDistItems.length > 0) {
+          renderDistribution(latestDistItems);
+        }
+      }, 120);
+    });
+    sortByEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
+    sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     loadData();
     setInterval(loadData, REFRESH_MS);
   </script>
