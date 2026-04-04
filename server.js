@@ -74,7 +74,8 @@ const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
 
 // Customize your sheet tabs here, e.g. "01_股票_基金!A1:Z300"
 const DEFAULT_RANGES = [
-  "'01_股票基金'!A1:Z300"
+  "'01_股票基金'!A1:Z300",
+  "'02_投資分布圖'!A1:Z300"
 ];
 
 app.use(express.static(__dirname));
