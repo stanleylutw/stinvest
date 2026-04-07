@@ -39,6 +39,10 @@
       margin: 2.4rem auto 3rem;
     }
 
+    .wrap > section + section {
+      margin-top: 1rem;
+    }
+
     .hero {
       background: linear-gradient(125deg, #004e64, #0a9396);
       color: #f4fbfc;
@@ -68,7 +72,6 @@
     }
 
     .kpis {
-      margin-top: 1rem;
       display: grid;
       grid-template-columns: repeat(6, minmax(110px, 1fr));
       gap: 0.8rem;
@@ -94,6 +97,27 @@
       line-height: 1.2;
     }
 
+    .kpi-delta {
+      display: block;
+      margin-top: 0.35rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      font-style: normal;
+      color: #667085;
+    }
+
+    .kpi-delta.up {
+      color: var(--gain);
+    }
+
+    .kpi-delta.down {
+      color: var(--loss);
+    }
+
+    .kpi-delta.flat {
+      color: #6b7280;
+    }
+
     .gain {
       color: var(--gain);
     }
@@ -103,7 +127,6 @@
     }
 
     .grid {
-      margin-top: 1rem;
       display: grid;
       gap: 1rem;
       grid-template-columns: 1.2fr 1fr;
@@ -185,7 +208,7 @@
     }
 
     .footer {
-      margin-top: 1rem;
+      margin-top: 1.25rem;
       display: flex;
       justify-content: space-between;
       color: var(--muted);
@@ -211,8 +234,7 @@
       font-size: 0.9rem;
       font-weight: 700;
       color: #334155;
-      border: 1px solid var(--group-border, #cfd6e2);
-      border-bottom: 0;
+      border: 0;
       background: var(--group-bg, #e5e7eb);
     }
 
@@ -220,7 +242,7 @@
       background: var(--group-bg, #e5e7eb);
       color: #334155;
       font-weight: 700;
-      border-bottom-color: var(--group-border, #d8dee8);
+      border: 0;
     }
 
     .subtotal-row td {
@@ -253,6 +275,17 @@
       background: #fff;
       color: var(--ink);
       font: inherit;
+    }
+
+    .table-tools-alone {
+      margin-bottom: 0.45rem;
+    }
+
+    .kpi-compare-info {
+      margin-top: 0.5rem;
+      color: #64748b;
+      font-size: 0.82rem;
+      font-weight: 600;
     }
 
     .section-head {
@@ -297,12 +330,26 @@
       transition: transform 0.2s ease;
     }
 
-    .card.is-collapsed .collapsible-body {
+    .collapsible-section.is-collapsed .collapsible-body {
       display: none;
     }
 
-    .card.is-collapsed .collapse-icon {
+    .collapsible-section.is-collapsed .collapse-icon {
       transform: rotate(-90deg);
+    }
+
+    .hero .collapsible-toggle {
+      color: #f4fbfc;
+      font-size: clamp(1.2rem, 2.6vw, 1.8rem);
+      font-weight: 800;
+    }
+
+    .hero .collapse-icon {
+      color: #d9f4f7;
+    }
+
+    .hero .collapsible-head {
+      margin-bottom: 0;
     }
 
     .dist-chart-wrap {
@@ -337,8 +384,77 @@
 
     .dist-chart {
       width: 100%;
-      overflow-x: auto;
+      min-height: 220px;
+      overflow: hidden;
     }
+
+    .dist-chart svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .history-tools {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+      font-size: 0.88rem;
+      color: #475569;
+    }
+
+    .history-tools select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.3rem 0.45rem;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .history-tools input[type="date"] {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.28rem 0.4rem;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .history-custom-range {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .history-custom-range.is-hidden {
+      display: none;
+    }
+
+    .history-trend-wrap {
+      border: 1px solid #e7e2d8;
+      border-radius: 12px;
+      background: #f7f8fa;
+      padding: 0.45rem;
+    }
+
+    .history-trend-chart {
+      width: 100%;
+      min-height: 260px;
+      overflow: hidden;
+    }
+
+    .history-trend-chart svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .trend-up { color: var(--gain); font-weight: 700; }
+    .trend-down { color: var(--loss); font-weight: 700; }
+    .trend-flat { color: #6b7280; font-weight: 700; }
 
     @keyframes enter {
       from {
@@ -367,6 +483,10 @@
         width: 95vw;
       }
 
+      .wrap > section + section {
+        margin-top: 0.85rem;
+      }
+
       .kpis {
         grid-template-columns: repeat(2, minmax(120px, 1fr));
       }
@@ -383,68 +503,45 @@
 </head>
 <body>
   <main class="wrap">
-    <section class="hero">
-      <h1>投資分析與總覽</h1>
-      <p>2026 年投資總表視圖 | 以「全帳戶」為核心，快速看懂報酬、現金流與配置</p>
-      <div class="statusline">
-        <span>狀態：<strong id="statusText">待載入</strong></span>
-        <span>上次更新：<strong id="updatedAt">--</strong></span>
+    <section id="sec-overview" class="hero">
+      <h1>ST投資分析總覽</h1>
+      <div>
+        <div class="statusline">
+          <span>狀態：<strong id="statusText">待載入</strong></span>
+          <span>上次更新：<strong id="updatedAt">--</strong></span>
+        </div>
       </div>
     </section>
 
-    <section class="kpis">
-      <article class="kpi"><small>總市值</small><b id="kpiMarketValue">--</b></article>
-      <article class="kpi"><small>持有成本</small><b id="kpiCost">--</b></article>
-      <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b></article>
-      <article class="kpi"><small>累積配息</small><b id="kpiDividend">--</b></article>
-      <article class="kpi"><small>含息損益</small><b id="kpiProfitWithDividend">--</b></article>
-      <article class="kpi"><small>預估月配額</small><b id="kpiMonthlyIncome">--</b></article>
+    <section id="sec-kpis" class="card collapsible-section">
+      <div class="collapsible-head">
+        <button class="collapsible-toggle" type="button" aria-expanded="true">
+          <span>資產總覽</span>
+          <span class="collapse-icon">▾</span>
+        </button>
+      </div>
+      <div class="collapsible-body">
+        <div class="kpis">
+          <article class="kpi"><small>總市值</small><b id="kpiMarketValue">--</b><em class="kpi-delta" id="kpiDeltaMarketValue">■ --</em></article>
+          <article class="kpi"><small>持有成本</small><b id="kpiCost">--</b></article>
+          <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b></article>
+          <article class="kpi"><small>累積配息</small><b id="kpiDividend">--</b></article>
+          <article class="kpi"><small>含息損益</small><b id="kpiProfitWithDividend">--</b></article>
+          <article class="kpi"><small>預估月配額</small><b id="kpiMonthlyIncome">--</b></article>
+        </div>
+        <div class="kpi-compare-info" id="kpiCompareInfo">比較基準：--</div>
+      </div>
     </section>
 
-    <section class="grid">
-      <article class="card is-collapsed">
-        <div class="collapsible-head">
-          <button class="collapsible-toggle" type="button" aria-expanded="false">
-            <span>資產配置（分帳戶 / 類別）</span>
-            <span class="collapse-icon">▾</span>
-          </button>
-        </div>
-        <div class="collapsible-body">
-          <div id="allocRows">
-            <div class="alloc-row">
-              <span>待載入</span>
-              <div class="bar"><span class="c1" style="width: 0%;"></span></div>
-              <strong>--</strong>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="card is-collapsed">
-        <div class="collapsible-head">
-          <button class="collapsible-toggle" type="button" aria-expanded="false">
-            <span>投資分布圖（投資比例 vs 報酬率）</span>
-            <span class="collapse-icon">▾</span>
-          </button>
-        </div>
-        <div class="collapsible-body">
-          <div class="dist-chart-wrap">
-            <div class="dist-chart-legend">
-              <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#6aa0d1;"></span>投資比例</span>
-              <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#c8c8c8;"></span>報酬率</span>
-            </div>
-            <div class="dist-chart" id="distChart">
-              載入中...
-            </div>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <section class="card">
-      <div class="section-head">
-        <h2>持股明細（即時）</h2>
-        <div class="table-tools">
+    <section id="sec-holdings" class="card collapsible-section">
+      <div class="collapsible-head">
+        <button class="collapsible-toggle" type="button" aria-expanded="true">
+          <span>持股明細</span>
+          <span class="collapse-icon">▾</span>
+        </button>
+      </div>
+      <div class="collapsible-body">
+        <div class="table-tools table-tools-alone">
           <label for="sortBy">排序</label>
           <select id="sortBy">
             <option value="sheet" selected>Google Sheet 原始順序</option>
@@ -460,16 +557,87 @@
             <option value="asc">由小到大</option>
           </select>
         </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="holdingsHead"></thead>
+            <tbody id="holdingsBody">
+              <tr class="empty-row">
+                <td colspan="1">載入中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead id="holdingsHead"></thead>
-          <tbody id="holdingsBody">
-            <tr class="empty-row">
-              <td colspan="1">載入中...</td>
-            </tr>
-          </tbody>
-        </table>
+    </section>
+
+    <section id="sec-distribution" class="card is-collapsed collapsible-section">
+      <div class="collapsible-head">
+        <button class="collapsible-toggle" type="button" aria-expanded="false">
+          <span>投資分布圖（市值佔比 vs 報酬率）</span>
+          <span class="collapse-icon">▾</span>
+        </button>
+      </div>
+      <div class="collapsible-body">
+        <div class="dist-chart-wrap">
+          <div class="dist-chart-legend">
+            <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#6aa0d1;"></span>市值佔比</span>
+            <span class="dist-legend-item"><span class="dist-legend-dot" style="background:#c8c8c8;"></span>報酬率</span>
+          </div>
+          <div class="dist-chart" id="distChart">
+            載入中...
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-history-trend" class="card is-collapsed collapsible-section">
+      <div class="collapsible-head">
+        <button class="collapsible-toggle" type="button" aria-expanded="false">
+          <span>歷史報酬率趨勢</span>
+          <span class="collapse-icon">▾</span>
+        </button>
+      </div>
+      <div class="collapsible-body">
+        <div class="history-tools">
+          <label for="histRangeSelect">範圍</label>
+          <select id="histRangeSelect">
+            <option value="all" selected>全部</option>
+            <option value="month">月</option>
+            <option value="quarter">季</option>
+            <option value="year">年</option>
+            <option value="custom">自訂</option>
+          </select>
+          <span class="history-custom-range is-hidden" id="histCustomRange">
+            <input id="histFromDate" type="date" />
+            <span>~</span>
+            <input id="histToDate" type="date" />
+          </span>
+          <label for="histY1Select">Y1</label>
+          <select id="histY1Select"></select>
+          <label for="histY2Select">Y2</label>
+          <select id="histY2Select"></select>
+        </div>
+        <div class="history-trend-wrap">
+          <div class="history-trend-chart" id="historyTrendChart">載入中...</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-alloc" class="card is-collapsed collapsible-section">
+      <div class="collapsible-head">
+        <button class="collapsible-toggle" type="button" aria-expanded="false">
+          <span>資產配置</span>
+          <span class="collapse-icon">▾</span>
+        </button>
+      </div>
+      <div class="collapsible-body">
+        <div id="allocRows">
+          <div class="alloc-row">
+            <span>待載入</span>
+            <div class="bar"><span class="c1" style="width: 0%;"></span></div>
+            <strong>--</strong>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -493,6 +661,14 @@
     const sortByEl = document.getElementById("sortBy");
     const sortDirEl = document.getElementById("sortDir");
     const distChart = document.getElementById("distChart");
+    const histRangeSelect = document.getElementById("histRangeSelect");
+    const histCustomRange = document.getElementById("histCustomRange");
+    const histFromDate = document.getElementById("histFromDate");
+    const histToDate = document.getElementById("histToDate");
+    const histY1Select = document.getElementById("histY1Select");
+    const histY2Select = document.getElementById("histY2Select");
+    const historyTrendChart = document.getElementById("historyTrendChart");
+    const kpiCompareInfo = document.getElementById("kpiCompareInfo");
 
     const kpiEls = {
       marketValue: document.getElementById("kpiMarketValue"),
@@ -503,11 +679,30 @@
       monthlyIncome: document.getElementById("kpiMonthlyIncome")
     };
 
+    const kpiDeltaEls = {
+      marketValue: document.getElementById("kpiDeltaMarketValue")
+    };
+
     const barClasses = ["c1", "c2", "c3", "c4", "c5"];
     let latestHoldings = [];
     let latestDistItems = [];
+    let latestDistDeltaInfo = null;
     let latestGroupSummaries = new Map();
+    let latestHistoryRows = [];
+    let latestHistoryDaily = [];
+    let latestHistoryLatest = null;
+    let latestHistorySnapshots = [];
     let visibleColumns = [];
+
+    const HISTORY_METRIC_OPTIONS = [
+      { key: "none", label: "無", axis: "none" },
+      { key: "現值", label: "現值", axis: "value" },
+      { key: "含息報酬率", label: "含息報酬率", axis: "percent" },
+      { key: "成本", label: "成本", axis: "value" },
+      { key: "配息", label: "配息", axis: "value" },
+      { key: "淨損益", label: "淨損益", axis: "value" },
+      { key: "含息損益", label: "含息損益", axis: "value" }
+    ];
 
     const idx = {
       name: 1,
@@ -524,6 +719,35 @@
       profitWithDividend: 11,
       profitWithDividendRate: 12
     };
+
+    function resolveColumnIndexes(headerRow) {
+      if (!headerRow || !headerRow.length) return;
+      const map = {};
+      for (let i = 0; i < headerRow.length; i += 1) {
+        const key = cleanHeader(headerRow[i]);
+        if (key) map[key] = i;
+      }
+      const pick = (names, fallback) => {
+        for (const n of names) {
+          if (Object.prototype.hasOwnProperty.call(map, n)) return map[n];
+        }
+        return fallback;
+      };
+
+      idx.name = pick(["股票/ETF"], idx.name);
+      idx.title = pick(["標的"], idx.title);
+      idx.profit = pick(["損益"], idx.profit);
+      idx.profitRate = pick(["損益率"], idx.profitRate);
+      idx.price = pick(["股價"], idx.price);
+      idx.move = pick(["漲跌"], idx.move);
+      idx.holdingCost = pick(["持有成本"], idx.holdingCost);
+      idx.accDividend = pick(["累積配息"], idx.accDividend);
+      idx.profitWithDividend = pick(["含息損益"], idx.profitWithDividend);
+      idx.profitWithDividendRate = pick(["含息損益率"], idx.profitWithDividendRate);
+      idx.marketValue = pick(["市值"], idx.marketValue);
+      idx.dividendRate = pick(["配息率"], idx.dividendRate);
+      idx.monthlyIncome = pick(["月配額", "預估月配額"], idx.monthlyIncome);
+    }
 
     function toNumber(text) {
       if (!text) return NaN;
@@ -669,7 +893,399 @@
       return out;
     }
 
-    function renderDistribution(items) {
+    function normalizeReportDate(text) {
+      const src = String(text || "").trim();
+      if (!src) return "";
+      const m = src.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
+      if (!m) return src;
+      const y = m[1];
+      const mo = m[2].padStart(2, "0");
+      const d = m[3].padStart(2, "0");
+      return `${y}/${mo}/${d}`;
+    }
+
+    function dateToMs(dateText) {
+      const s = normalizeReportDate(dateText).replace(/\//g, "-");
+      const t = new Date(`${s}T00:00:00`).getTime();
+      return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+    }
+
+    function toMs(dateTimeText) {
+      const src = String(dateTimeText || "").trim();
+      if (!src) return Number.NEGATIVE_INFINITY;
+      const safe = src.replace(" ", "T");
+      const t = new Date(safe).getTime();
+      return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+    }
+
+    function parseHistory(data) {
+      const rows = data?.valueRanges?.[2]?.values || [];
+      if (rows.length < 2) return { rows: [], daily: [], latest: null, snapshots: [] };
+
+      const header = rows[0].map((h) => String(h || "").trim());
+      const col = (name) => header.indexOf(name);
+
+      const iTs = col("時間戳記");
+      const iBatch = col("批次ID");
+      const iDate = col("報表日期");
+      const iMetric = col("標的類別");
+      const iTotal = col("合計");
+
+      const hasNewFormatHeader = [iTs, iBatch, iDate, iMetric, iTotal].every((i) => i >= 0);
+      const parsedRows = hasNewFormatHeader
+        ? rows.slice(1).map((r) => ({
+            timestamp: String(r[iTs] || "").trim(),
+            batchId: String(r[iBatch] || "").trim(),
+            reportDate: normalizeReportDate(r[iDate]),
+            metric: String(r[iMetric] || "").trim(),
+            totalText: String(r[iTotal] || "").trim(),
+            total: toNumber(r[iTotal]),
+            byCategory: (() => {
+              const out = {};
+              for (let c = iMetric + 1; c < iTotal; c += 1) {
+                const cat = String(header[c] || "").trim();
+                if (!cat) continue;
+                out[cat] = {
+                  text: String(r[c] || "").trim(),
+                  value: toNumber(r[c])
+                };
+              }
+              return out;
+            })()
+          })).filter((r) => r.reportDate && r.metric)
+        : [];
+
+      // Fallback for legacy history blocks:
+      // date row -> 標的類別 -> 成本 -> 現值 -> 配息 -> ... -> 報酬率
+      const legacySnapshots = [];
+      for (let i = 0; i + 7 < rows.length; i += 1) {
+        const d0 = normalizeReportDate(rows[i]?.[0] || "");
+        const k1 = String(rows[i + 1]?.[0] || "").trim();
+        const kCost = String(rows[i + 2]?.[0] || "").trim();
+        const kMv = String(rows[i + 3]?.[0] || "").trim();
+        const kDiv = String(rows[i + 4]?.[0] || "").trim();
+        const kRet = String(rows[i + 7]?.[0] || "").trim();
+        if (!d0 || k1 !== "標的類別" || kCost !== "成本" || kMv !== "現值" || kDiv !== "配息" || kRet !== "報酬率") {
+          continue;
+        }
+        legacySnapshots.push({
+          reportDate: d0,
+          batchId: `legacy_${d0.replace(/\//g, "")}`,
+          timestamp: `${d0.replace(/\//g, "-")} 18:00:00`,
+          metrics: {
+            成本: { text: String(rows[i + 2]?.[9] || "").trim(), value: toNumber(rows[i + 2]?.[9]) },
+            現值: { text: String(rows[i + 3]?.[9] || "").trim(), value: toNumber(rows[i + 3]?.[9]) },
+            配息: { text: String(rows[i + 4]?.[9] || "").trim(), value: toNumber(rows[i + 4]?.[9]) },
+            淨損益: { text: String(rows[i + 3]?.[11] || "").trim(), value: toNumber(rows[i + 3]?.[11]) },
+            含息報酬率: { text: String(rows[i + 7]?.[9] || "").trim(), value: toNumber(rows[i + 7]?.[9]) }
+          }
+        });
+      }
+
+      const batches = new Map();
+      parsedRows.forEach((r) => {
+        const key = `${r.reportDate}__${r.batchId || r.timestamp}`;
+        if (!batches.has(key)) {
+          batches.set(key, {
+            reportDate: r.reportDate,
+            batchId: r.batchId,
+            timestamp: r.timestamp,
+            metrics: {}
+          });
+        }
+        const item = batches.get(key);
+        item.metrics[r.metric] = {
+          text: r.totalText,
+          value: r.total,
+          byCategory: r.byCategory || {}
+        };
+      });
+
+      legacySnapshots.forEach((s) => {
+        const key = `${s.reportDate}__${s.batchId || s.timestamp}`;
+        if (!batches.has(key)) {
+          batches.set(key, {
+            reportDate: s.reportDate,
+            batchId: s.batchId,
+            timestamp: s.timestamp,
+            metrics: {}
+          });
+        }
+        const item = batches.get(key);
+        item.metrics = { ...item.metrics, ...s.metrics };
+      });
+
+      const dailyMap = new Map();
+      Array.from(batches.values()).forEach((b) => {
+        const prev = dailyMap.get(b.reportDate);
+        if (!prev || toMs(b.timestamp) > toMs(prev.timestamp)) {
+          dailyMap.set(b.reportDate, b);
+        }
+      });
+
+      const daily = Array.from(dailyMap.values()).sort((a, b) => dateToMs(a.reportDate) - dateToMs(b.reportDate));
+      const latest = daily.length ? daily[daily.length - 1] : null;
+      const snapshots = Array.from(batches.values()).sort((a, b) => toMs(a.timestamp) - toMs(b.timestamp));
+
+      return { rows: parsedRows, daily, latest, snapshots };
+    }
+
+    function getHistoryMetricDef(key) {
+      return HISTORY_METRIC_OPTIONS.find((x) => x.key === key) || HISTORY_METRIC_OPTIONS[0];
+    }
+
+    function getSnapshotMetric(snapshot, key) {
+      if (key === "none") return NaN;
+      return snapshotMetricValue(snapshot, key);
+    }
+
+    function formatAxisValue(v, axisType) {
+      if (!Number.isFinite(v)) return "--";
+      if (axisType === "percent") return `${v.toFixed(0)}%`;
+      if (axisType === "value") {
+        const wan = v / 10000;
+        const abs = Math.abs(wan);
+        const digits = abs >= 100 ? 0 : (abs >= 10 ? 1 : 2);
+        return wan.toLocaleString("en-US", {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits
+        });
+      }
+      return Number(v).toLocaleString("en-US");
+    }
+
+    function formatMetricLabel(def) {
+      if (!def) return "";
+      if (def.axis === "value") return `${def.label}（萬元）`;
+      return def.label;
+    }
+
+    function setupHistorySelectors() {
+      if (!histY1Select || !histY2Select) return;
+      if (histY1Select.options.length > 0) return;
+      const opts = HISTORY_METRIC_OPTIONS.map((x) => `<option value="${x.key}">${x.label}</option>`).join("");
+      histY1Select.innerHTML = opts;
+      histY2Select.innerHTML = opts;
+      histY1Select.value = "含息損益";
+      histY2Select.value = "none";
+    }
+
+    function normalizeToDashDate(reportDate) {
+      return normalizeReportDate(reportDate).replace(/\//g, "-");
+    }
+
+    function filterHistoryByRange(daily) {
+      const rows = Array.isArray(daily) ? daily : [];
+      if (!rows.length || !histRangeSelect) return rows;
+
+      const mode = histRangeSelect.value || "all";
+      if (histCustomRange) {
+        histCustomRange.classList.toggle("is-hidden", mode !== "custom");
+      }
+      if (mode === "all") return rows;
+
+      const last = rows[rows.length - 1];
+      const endMs = dateToMs(last?.reportDate);
+      if (!Number.isFinite(endMs)) return rows;
+
+      if (mode === "custom") {
+        let fromMs = histFromDate?.value ? dateToMs(histFromDate.value) : Number.NEGATIVE_INFINITY;
+        let toMsVal = histToDate?.value ? dateToMs(histToDate.value) : Number.POSITIVE_INFINITY;
+        if (fromMs > toMsVal) {
+          const t = fromMs;
+          fromMs = toMsVal;
+          toMsVal = t;
+        }
+
+        const inRange = rows.filter((r) => {
+          const t = dateToMs(r.reportDate);
+          return t >= fromMs && t <= toMsVal;
+        });
+        if (inRange.length > 0) return inRange;
+
+        // If user-selected range has no exact points, still use nearest available points.
+        let nearestAfterFrom = null;
+        let nearestBeforeTo = null;
+        for (const r of rows) {
+          const t = dateToMs(r.reportDate);
+          if (t >= fromMs && (!nearestAfterFrom || t < dateToMs(nearestAfterFrom.reportDate))) {
+            nearestAfterFrom = r;
+          }
+          if (t <= toMsVal && (!nearestBeforeTo || t > dateToMs(nearestBeforeTo.reportDate))) {
+            nearestBeforeTo = r;
+          }
+        }
+
+        const picked = [];
+        if (nearestBeforeTo) picked.push(nearestBeforeTo);
+        if (nearestAfterFrom && nearestAfterFrom !== nearestBeforeTo) picked.push(nearestAfterFrom);
+        return picked.sort((a, b) => dateToMs(a.reportDate) - dateToMs(b.reportDate));
+      }
+
+      const dayMap = { month: 30, quarter: 90, year: 365 };
+      const days = dayMap[mode];
+      if (!days) return rows;
+      const startMs = endMs - days * 24 * 60 * 60 * 1000;
+      return rows.filter((r) => dateToMs(r.reportDate) >= startMs);
+    }
+
+    function updateHistoryDateBounds(daily) {
+      if (!histFromDate || !histToDate) return;
+      if (!Array.isArray(daily) || !daily.length) return;
+      const minDate = normalizeToDashDate(daily[0].reportDate);
+      const maxDate = normalizeToDashDate(daily[daily.length - 1].reportDate);
+      histFromDate.min = minDate;
+      histFromDate.max = maxDate;
+      histToDate.min = minDate;
+      histToDate.max = maxDate;
+      if (!histFromDate.value) histFromDate.value = minDate;
+      if (!histToDate.value) histToDate.value = maxDate;
+    }
+
+    function renderHistoryTrendChart(daily) {
+      if (!historyTrendChart) return;
+      const rows = filterHistoryByRange(daily || []);
+      if (!rows.length) {
+        historyTrendChart.textContent = "無歷史資料";
+        return;
+      }
+
+      setupHistorySelectors();
+      const y1Key = histY1Select.value || "現值";
+      const y2Key = histY2Select.value || "none";
+      const y1Def = getHistoryMetricDef(y1Key);
+      const y2Def = getHistoryMetricDef(y2Key);
+
+      const series = rows.map((r) => ({
+        d: r.reportDate,
+        y1: getSnapshotMetric(r, y1Key),
+        y2: getSnapshotMetric(r, y2Key)
+      }));
+      const valid = series.filter((x) => Number.isFinite(x.y1) || Number.isFinite(x.y2));
+      if (!valid.length) {
+        historyTrendChart.textContent = "歷史資料不足（欄位無可用數值）";
+        return;
+      }
+
+      const wrap = historyTrendChart.closest(".history-trend-wrap");
+      const measuredWidth = Math.floor(
+        historyTrendChart.getBoundingClientRect().width ||
+        wrap?.getBoundingClientRect().width ||
+        0
+      );
+      const w = Math.max(760, measuredWidth);
+      const h = Math.min(460, Math.max(300, Math.round(w * 0.28)));
+      const m = { l: 74, r: 74, t: 16, b: 44 };
+      const pw = w - m.l - m.r;
+      const ph = h - m.t - m.b;
+      const n = valid.length;
+      const showY1 = y1Key !== "none";
+      const showY2 = y2Key !== "none";
+
+      const y1Vals = valid.map((x) => x.y1).filter(Number.isFinite);
+      const y2Vals = valid.map((x) => x.y2).filter(Number.isFinite);
+      const range = (vals) => {
+        if (!vals.length) return [0, 1];
+        let min = Math.min(...vals);
+        let max = Math.max(...vals);
+        if (min === max) {
+          const p = Math.abs(min) || 1;
+          min -= p * 0.05;
+          max += p * 0.05;
+        }
+        const pad = (max - min) * 0.08;
+        return [min - pad, max + pad];
+      };
+      const [y1Min, y1Max] = range(y1Vals);
+      const [y2Min, y2Max] = range(y2Vals);
+
+      const xAt = (i) => m.l + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+      const yAt1 = (v) => m.t + ph * (1 - (v - y1Min) / (y1Max - y1Min));
+      const yAt2 = (v) => m.t + ph * (1 - (v - y2Min) / (y2Max - y2Min));
+
+      const pathFrom = (key, yFn) => {
+        let d = "";
+        valid.forEach((p, i) => {
+          const v = p[key];
+          if (!Number.isFinite(v)) return;
+          const x = xAt(i);
+          const y = yFn(v);
+          d += d ? ` L ${x} ${y}` : `M ${x} ${y}`;
+        });
+        return d;
+      };
+      const p1 = showY1 ? pathFrom("y1", yAt1) : "";
+      const p2 = showY2 ? pathFrom("y2", yAt2) : "";
+
+      const yTicks = 5;
+      const grid = Array.from({ length: yTicks + 1 }, (_, i) => {
+        const t = i / yTicks;
+        const y = m.t + ph * t;
+        const v1 = y1Max - (y1Max - y1Min) * t;
+        const v2 = y2Max - (y2Max - y2Min) * t;
+        return `
+          <line x1="${m.l}" y1="${y}" x2="${w - m.r}" y2="${y}" stroke="#dde2ea" stroke-width="1" />
+          <text x="${m.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#4b5563">${showY1 ? formatAxisValue(v1, y1Def.axis) : ""}</text>
+          <text x="${w - m.r + 10}" y="${y + 4}" text-anchor="start" font-size="11" fill="#4b5563">${showY2 ? formatAxisValue(v2, y2Def.axis) : ""}</text>
+        `;
+      }).join("");
+
+      const xStep = Math.max(1, Math.ceil(n / 8));
+      const xLabels = valid.map((p, i) => {
+        if (i % xStep !== 0 && i !== n - 1) return "";
+        return `<text x="${xAt(i)}" y="${m.t + ph + 22}" text-anchor="middle" font-size="11" fill="#334155">${p.d}</text>`;
+      }).join("");
+
+      const points = (key, yFn, color) => valid.map((p, i) => {
+        const v = p[key];
+        if (!Number.isFinite(v)) return "";
+        return `<circle cx="${xAt(i)}" cy="${yFn(v)}" r="2.8" fill="${color}" />`;
+      }).join("");
+
+      historyTrendChart.innerHTML = `
+        <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="0" width="${w}" height="${h}" fill="#f7f8fa" />
+          ${grid}
+          ${showY1 ? `<path d="${p1}" fill="none" stroke="#2563eb" stroke-width="2.2" />` : ""}
+          ${showY2 ? `<path d="${p2}" fill="none" stroke="#64748b" stroke-width="2.2" />` : ""}
+          ${showY1 ? points("y1", yAt1, "#2563eb") : ""}
+          ${showY2 ? points("y2", yAt2, "#64748b") : ""}
+          <line x1="${m.l}" y1="${m.t + ph}" x2="${w - m.r}" y2="${m.t + ph}" stroke="#64748b" stroke-width="1.3" />
+          ${xLabels}
+          ${showY1 ? `<text x="${m.l}" y="${13}" text-anchor="start" font-size="11" fill="#2563eb" font-weight="700">${formatMetricLabel(y1Def)}</text>` : ""}
+          ${showY2 ? `<text x="${w - m.r}" y="${13}" text-anchor="end" font-size="11" fill="#64748b" font-weight="700">${formatMetricLabel(y2Def)}</text>` : ""}
+        </svg>
+      `;
+    }
+
+    function trendText(delta) {
+      if (!Number.isFinite(delta)) return { cls: "trend-flat", text: "■ --", fill: "#6b7280" };
+      if (delta > 0) return { cls: "trend-up", text: `▲ +${Math.abs(delta).toFixed(2)}%`, fill: "#ce3a2b" };
+      if (delta < 0) return { cls: "trend-down", text: `▼ -${Math.abs(delta).toFixed(2)}%`, fill: "#1a8f4d" };
+      return { cls: "trend-flat", text: "■ 0.00%", fill: "#6b7280" };
+    }
+
+    function buildDistributionDeltaInfo(items, summary, history) {
+      const currentMarket = toNumber(summary?.[idx.marketValue]);
+      const baseline = findBaselineSnapshot(history, currentMarket);
+      if (!baseline) return { baseline: null, byName: new Map() };
+      const byW = baseline.metrics?.["總投資佔比"]?.byCategory || {};
+      const byR = baseline.metrics?.["含息報酬率"]?.byCategory || {};
+      const byName = new Map();
+      items.forEach((x) => {
+        const wNow = toNumber(x.weight);
+        const rNow = toNumber(x.ret);
+        const wPrev = Number.isFinite(byW[x.name]?.value) ? byW[x.name].value : NaN;
+        const rPrev = Number.isFinite(byR[x.name]?.value) ? byR[x.name].value : NaN;
+        byName.set(x.name, {
+          w: trendText(wNow - wPrev),
+          r: trendText(rNow - rPrev)
+        });
+      });
+      return { baseline, byName };
+    }
+
+    function renderDistribution(items, deltaInfo = null) {
       if (!items.length) {
         distChart.textContent = "無第二分頁資料";
         return;
@@ -688,28 +1304,29 @@
       const ticks = [];
       for (let t = 0; t <= yMax; t += tickStep) ticks.push(t);
 
-      const margin = { left: 34, right: 12, top: 14, bottom: 26 };
-      const barW = 10;
-      const barGap = 2;
+      const margin = { left: 42, right: 18, top: 18, bottom: 62 };
       const wrap = distChart.closest(".dist-chart-wrap");
       const measuredWidth = Math.floor(
         distChart.getBoundingClientRect().width ||
         wrap?.getBoundingClientRect().width ||
         0
       );
-      const containerW = Math.max(380, measuredWidth);
-      const chartW = containerW;
-      const chartH = 190;
+      const chartW = Math.max(720, measuredWidth);
+      const chartH = Math.min(460, Math.max(290, Math.round(chartW * 0.24)));
       const plotH = chartH - margin.top - margin.bottom;
       const plotW = chartW - margin.left - margin.right;
       const n = Math.max(values.length, 1);
+      const slotW = plotW / n;
+      const groupW = Math.min(72, Math.max(20, slotW * 0.64));
+      const barGap = Math.max(3, Math.min(8, groupW * 0.1));
+      const barW = (groupW - barGap) / 2;
 
       const y = (v) => margin.top + plotH * (1 - v / yMax);
       const xCenter = (i) => margin.left + ((i + 0.5) / n) * plotW;
 
       const gridLines = ticks.map((t) => `
         <line x1="${margin.left}" y1="${y(t)}" x2="${chartW - margin.right}" y2="${y(t)}" stroke="#d6d9de" stroke-width="1" />
-        <text x="${margin.left - 6}" y="${y(t) + 3}" text-anchor="end" font-size="8" fill="#4b5563">${t}%</text>
+        <text x="${margin.left - 8}" y="${y(t) + 4}" text-anchor="end" font-size="12" fill="#4b5563">${t}%</text>
       `).join("");
 
       const bars = values.map((v, i) => {
@@ -720,12 +1337,17 @@
         const rY = y(rH);
         const wBarH = margin.top + plotH - wY;
         const rBarH = margin.top + plotH - rY;
+        const d = deltaInfo?.byName?.get(v.name);
+        const dW = d?.w || { text: "■ --", fill: "#6b7280" };
+        const dR = d?.r || { text: "■ --", fill: "#6b7280" };
         return `
           <rect x="${cx - barW - barGap/2}" y="${wY}" width="${barW}" height="${wBarH}" rx="3" fill="#6aa0d1" />
           <rect x="${cx + barGap/2}" y="${rY}" width="${barW}" height="${rBarH}" rx="3" fill="#c8c8c8" />
-          <text x="${cx - barW/2 - barGap/2}" y="${wY - 4}" text-anchor="middle" font-size="8" fill="#2e6fd0" font-weight="700">${Math.round(v.weight)}%</text>
-          <text x="${cx + barW/2 + barGap/2}" y="${rY - 4}" text-anchor="middle" font-size="8" fill="#9ca3af" font-weight="700">${Math.round(v.ret)}%</text>
-          <text x="${cx}" y="${margin.top + plotH + 12}" text-anchor="middle" font-size="8" fill="#111827">${v.name}</text>
+          <text x="${cx - barW/2 - barGap/2}" y="${wY - 6}" text-anchor="middle" font-size="10" fill="#2e6fd0" font-weight="700">${Math.round(v.weight)}%</text>
+          <text x="${cx + barW/2 + barGap/2}" y="${rY - 6}" text-anchor="middle" font-size="10" fill="#9ca3af" font-weight="700">${Math.round(v.ret)}%</text>
+          <text x="${cx}" y="${margin.top + plotH + 20}" text-anchor="middle" font-size="12" fill="#111827">${v.name}</text>
+          <text x="${cx}" y="${margin.top + plotH + 34}" text-anchor="middle" font-size="9" fill="${dW.fill}" font-weight="700">${dW.text}</text>
+          <text x="${cx}" y="${margin.top + plotH + 46}" text-anchor="middle" font-size="9" fill="${dR.fill}" font-weight="700">${dR.text}</text>
         `;
       }).join("");
 
@@ -800,8 +1422,8 @@
             const value = row.cells[col.index] || "--";
             const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
             if (!needColor) return td(value);
-            const isBlackPositive = [idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
-            return td(value, isBlackPositive ? classByValueBlackPositive(value) : classByValue(value));
+            const isMoveCol = col.index === idx.move;
+            return td(value, isMoveCol ? classByValue(value) : classByValueBlackPositive(value));
           }));
           body.push(`<tr>${cols.join("")}</tr>`);
         });
@@ -819,7 +1441,7 @@
           const needColor = [idx.profit, idx.profitWithDividend].includes(col.index);
           if (!needColor) return td(txt);
           const forColor = hasSheetValue ? String(fromSheet) : String(sum);
-          const klass = col.index === idx.profitWithDividend ? classByValueBlackPositive(forColor) : classByValue(forColor);
+          const klass = classByValueBlackPositive(forColor);
           return td(txt, klass);
         }));
         body.push(`<tr class="subtotal-row">${subtotalCells.join("")}</tr>`);
@@ -841,14 +1463,86 @@
       kpiEls.profitWithDividend.textContent = currency(summary[idx.profitWithDividend]);
       kpiEls.monthlyIncome.textContent = currency(summary[idx.monthlyIncome]);
 
-      kpiEls.profit.className = classByValue(summary[idx.profit]);
+      kpiEls.profit.className = classByValueBlackPositive(summary[idx.profit]);
       kpiEls.profitWithDividend.className = classByValueBlackPositive(summary[idx.profitWithDividend]);
+    }
+
+    function snapshotMetricValue(snapshot, metric) {
+      if (!snapshot || !snapshot.metrics) return NaN;
+      const read = (name) => {
+        const v = snapshot.metrics[name]?.value;
+        return Number.isFinite(v) ? v : NaN;
+      };
+      if (metric === "含息損益") {
+        const net = read("淨損益");
+        const div = read("配息");
+        if (Number.isFinite(net) && Number.isFinite(div)) return net + div;
+        return NaN;
+      }
+      return read(metric);
+    }
+
+    function findBaselineSnapshot(history, currentMarketValue) {
+      const snapshots = history?.snapshots || [];
+      if (!snapshots.length || !Number.isFinite(currentMarketValue)) return null;
+      for (let i = snapshots.length - 1; i >= 0; i -= 1) {
+        const s = snapshots[i];
+        const mv = snapshotMetricValue(s, "現值");
+        if (!Number.isFinite(mv)) continue;
+        if (mv !== currentMarketValue) return s;
+      }
+      return null;
+    }
+
+    function formatSignedNumber(n) {
+      const abs = Math.abs(n);
+      const txt = abs.toLocaleString("en-US");
+      return `${n >= 0 ? "+" : "-"}${txt}`;
+    }
+
+    function setKpiDelta(el, current, prev) {
+      if (!el || !Number.isFinite(current) || !Number.isFinite(prev)) {
+        if (el) {
+          el.textContent = "■ --";
+          el.className = "kpi-delta flat";
+        }
+        return;
+      }
+      const delta = current - prev;
+      const pct = prev === 0 ? NaN : (delta / Math.abs(prev)) * 100;
+      const icon = delta > 0 ? "▲" : (delta < 0 ? "▼" : "■");
+      const cls = delta > 0 ? "up" : (delta < 0 ? "down" : "flat");
+      const pctText = Number.isFinite(pct) ? `${delta >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(2)}%` : "--";
+      el.textContent = `${icon} ${formatSignedNumber(delta)} (${pctText})`;
+      el.className = `kpi-delta ${cls}`;
+    }
+
+    function renderKpiDeltas(summary, history) {
+      const current = {
+        marketValue: toNumber(summary?.[idx.marketValue])
+      };
+      const prevSnapshot = findBaselineSnapshot(history, current.marketValue);
+      const previous = {
+        marketValue: snapshotMetricValue(prevSnapshot, "現值")
+      };
+
+      setKpiDelta(kpiDeltaEls.marketValue, current.marketValue, previous.marketValue);
+
+      if (prevSnapshot) {
+        const mvText = prevSnapshot.metrics?.["現值"]?.text || "--";
+        const tsText = prevSnapshot.timestamp || "--";
+        const dText = prevSnapshot.reportDate || "--";
+        kpiCompareInfo.textContent = `比較基準：${dText} ${tsText}（總市值 ${mvText}）`;
+      } else {
+        kpiCompareInfo.textContent = `比較基準：未找到（history daily=${history?.daily?.length || 0}, snapshots=${history?.snapshots?.length || 0}）`;
+      }
     }
 
     function parseRows(data) {
       const allRows = data?.valueRanges?.[0]?.values || [];
       if (!allRows.length) return { headerRow: null, summary: null, groups: [], holdings: [], groupSummaries: new Map() };
       const headerRow = allRows[0] || [];
+      resolveColumnIndexes(headerRow);
       const rows = allRows.slice(1);
       const summary = rows.find((r) => (r[idx.name] || "").trim() === "全帳戶") || null;
       const groups = [];
@@ -914,13 +1608,22 @@
         const data = await res.json();
         const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
         const distItems = parseDistribution(data);
+        const history = parseHistory(data);
         latestHoldings = holdings;
         latestGroupSummaries = groupSummaries;
         latestDistItems = distItems;
+        latestDistDeltaInfo = buildDistributionDeltaInfo(distItems, summary, history);
+        latestHistoryRows = history.rows;
+        latestHistoryDaily = history.daily;
+        latestHistoryLatest = history.latest;
+        latestHistorySnapshots = history.snapshots || [];
+        updateHistoryDateBounds(history.daily);
         renderTableHeaders(headerRow);
         renderKpis(summary);
+        renderKpiDeltas(summary, history);
         renderAlloc(groups, holdings);
-        renderDistribution(distItems);
+        renderDistribution(distItems, latestDistDeltaInfo);
+        renderHistoryTrendChart(history.daily);
         renderHoldings(holdings, groupSummaries);
         statusText.textContent = "已更新";
         updatedAt.textContent = new Date().toLocaleString("zh-TW");
@@ -930,16 +1633,37 @@
       }
     }
 
+    const COLLAPSE_STORAGE_PREFIX = "invest_section_collapsed_";
+
+    function collapseKey(sectionEl, index) {
+      if (sectionEl?.id) return `${COLLAPSE_STORAGE_PREFIX}${sectionEl.id}`;
+      return `${COLLAPSE_STORAGE_PREFIX}section_${index}`;
+    }
+
+    function setCollapseState(sectionEl, btn, collapsed) {
+      sectionEl.classList.toggle("is-collapsed", collapsed);
+      btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+
     renderAutoVersion();
-    document.querySelectorAll(".collapsible-toggle").forEach((btn) => {
+    document.querySelectorAll(".collapsible-toggle").forEach((btn, index) => {
+      const section = btn.closest(".collapsible-section");
+      if (!section) return;
+
+      const key = collapseKey(section, index);
+      const stored = localStorage.getItem(key);
+      if (stored === "1") setCollapseState(section, btn, true);
+      if (stored === "0") setCollapseState(section, btn, false);
+
       btn.addEventListener("click", () => {
-        const card = btn.closest(".card");
-        if (!card) return;
-        card.classList.toggle("is-collapsed");
-        const expanded = !card.classList.contains("is-collapsed");
-        btn.setAttribute("aria-expanded", expanded ? "true" : "false");
-        if (expanded && btn.textContent.includes("投資分布圖")) {
-          renderDistribution(latestDistItems);
+        const isCollapsed = section.classList.toggle("is-collapsed");
+        btn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+        localStorage.setItem(key, isCollapsed ? "1" : "0");
+        if (!isCollapsed && section.querySelector("#distChart")) {
+          renderDistribution(latestDistItems, latestDistDeltaInfo);
+        }
+        if (!isCollapsed && section.querySelector("#historyTrendChart")) {
+          renderHistoryTrendChart(latestHistoryDaily);
         }
       });
     });
@@ -948,10 +1672,18 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         if (latestDistItems.length > 0) {
-          renderDistribution(latestDistItems);
+          renderDistribution(latestDistItems, latestDistDeltaInfo);
+        }
+        if (latestHistoryDaily.length > 0) {
+          renderHistoryTrendChart(latestHistoryDaily);
         }
       }, 120);
     });
+    histY1Select.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
+    histY2Select.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
+    histRangeSelect.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
+    histFromDate.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
+    histToDate.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
     sortByEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     loadData();
