@@ -647,9 +647,12 @@
     </div>
   </main>
   <script>
-    const PROD_API_BASE = "https://your-backend-domain.com";
-    const API_BASE = location.hostname === "localhost" ? "http://localhost:3000" : PROD_API_BASE;
-    const API_URL = `${API_BASE}/api/portfolio`;
+    const APPS_SCRIPT_EXEC_URL = "https://script.google.com/macros/s/AKfycbwUJD4T_41DH-E5BX32tM2_RHrSPWtYOPiZMqwEfGeONtZVNHb6T9g4YakmBtxM_UpJMQ/exec";
+    const APPS_SCRIPT_TOKEN = "stinvest_2026_0411";
+    const USE_LOCAL_BACKEND = location.hostname === "localhost";
+    const API_URL = USE_LOCAL_BACKEND
+      ? "http://localhost:3000/api/portfolio"
+      : `${APPS_SCRIPT_EXEC_URL}?token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
     const REFRESH_MS = 60 * 1000;
 
     const statusText = document.getElementById("statusText");
@@ -1603,10 +1606,9 @@
     async function loadData() {
       statusText.textContent = "更新中...";
       try {
-        const res = await fetch(API_URL, {
-          cache: "no-store",
-          credentials: "include"
-        });
+        const fetchOptions = { cache: "no-store" };
+        if (USE_LOCAL_BACKEND) fetchOptions.credentials = "include";
+        const res = await fetch(API_URL, fetchOptions);
         if (!res.ok) {
           throw new Error(await res.text());
         }
