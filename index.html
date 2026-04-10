@@ -650,6 +650,7 @@
     const PROD_API_BASE = "https://stinvest.onrender.com";
     const USE_LOCAL_BACKEND = location.hostname === "localhost";
     const AUTH_REDIRECT_TRIED_KEY = "stinvest_auth_redirect_tried";
+    const API_TOKEN_STORAGE_KEY = "stinvest_api_token";
     const API_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/portfolio"
       : `${PROD_API_BASE}/api/portfolio`;
@@ -1606,13 +1607,30 @@
       versionText.textContent = `版本：v${y}${m}${day}.${hh}${mm}（Auto）`;
     }
 
+    function readApiTokenFromHash() {
+      const raw = String(window.location.hash || "");
+      if (!raw || !raw.startsWith("#")) return "";
+      const qs = new URLSearchParams(raw.slice(1));
+      const token = (qs.get("st_token") || "").trim();
+      if (!token) return "";
+      localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+      const cleanUrl = `${window.location.pathname}${window.location.search}`;
+      window.history.replaceState({}, "", cleanUrl);
+      return token;
+    }
+
     async function loadData() {
       statusText.textContent = "更新中...";
       try {
+        const tokenFromHash = readApiTokenFromHash();
+        const apiToken = tokenFromHash || localStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
         const fetchOptions = {
           cache: "no-store",
           credentials: "include"
         };
+        if (apiToken) {
+          fetchOptions.headers = { Authorization: `Bearer ${apiToken}` };
+        }
         const res = await fetch(API_URL, fetchOptions);
         if (res.status === 401) {
           const tried = sessionStorage.getItem(AUTH_REDIRECT_TRIED_KEY) === "1";
@@ -1623,7 +1641,8 @@
             window.location.href = `${AUTH_URL}?returnTo=${returnTo}`;
             return;
           }
-          throw new Error("Unauthorized after login redirect. Please allow third-party cookies and retry.");
+          localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+          throw new Error("Unauthorized after login redirect.");
         }
         if (!res.ok) {
           throw new Error(await res.text());
@@ -1653,8 +1672,8 @@
         updatedAt.textContent = new Date().toLocaleString("zh-TW");
       } catch (err) {
         console.error(err);
-        if (String(err?.message || "").includes("third-party cookies")) {
-          statusText.textContent = "更新失敗（請允許第三方 Cookie 後重試）";
+        if (String(err?.message || "").includes("Unauthorized after login redirect")) {
+          statusText.textContent = "更新失敗（授權逾時，請重新整理重試）";
         } else {
           statusText.textContent = "更新失敗";
         }

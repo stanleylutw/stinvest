@@ -3,6 +3,7 @@ import express from "express";
 import session from "express-session";
 import { google } from "googleapis";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const app = express();
@@ -15,6 +16,8 @@ const ALLOWED_ORIGINS = [
   "https://stanleylutw.github.io"
 ];
 const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
+const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const issuedApiTokens = new Map();
 
 if (isProduction) {
   app.set("trust proxy", 1);
@@ -111,6 +114,44 @@ function decodeState(stateText) {
   }
 }
 
+function issueApiToken(tokens) {
+  const apiToken = crypto.randomBytes(24).toString("base64url");
+  issuedApiTokens.set(apiToken, {
+    tokens,
+    expiresAt: Date.now() + API_TOKEN_TTL_MS
+  });
+  return apiToken;
+}
+
+function getTokensFromApiToken(apiToken) {
+  if (!apiToken || typeof apiToken !== "string") return null;
+  const item = issuedApiTokens.get(apiToken);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    issuedApiTokens.delete(apiToken);
+    return null;
+  }
+  return item.tokens;
+}
+
+function pickAuthToken(req) {
+  const h = String(req.headers.authorization || "").trim();
+  if (h.toLowerCase().startsWith("bearer ")) {
+    return h.slice(7).trim();
+  }
+  if (typeof req.query.st_token === "string") {
+    return req.query.st_token.trim();
+  }
+  return "";
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of issuedApiTokens.entries()) {
+    if (now > v.expiresAt) issuedApiTokens.delete(k);
+  }
+}, 1000 * 60 * 30).unref();
+
 app.get("/auth/google", (req, res) => {
   const returnTo = normalizeReturnTo(req.query.returnTo);
   const authUrl = oauth2Client.generateAuthUrl({
@@ -131,11 +172,14 @@ app.get("/oauth2/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code);
     req.session.tokens = tokens;
+    const apiToken = issueApiToken(tokens);
     const state = decodeState(req.query.state);
     const returnTo = normalizeReturnTo(state.returnTo);
     req.session.save(() => {
       if (returnTo) {
-        return res.redirect(returnTo);
+        const to = new URL(returnTo);
+        to.hash = `st_token=${encodeURIComponent(apiToken)}`;
+        return res.redirect(to.toString());
       }
       return res.type("text/plain").send(
         "OAuth success. Now open /api/portfolio to fetch Google Sheets data."
@@ -148,7 +192,10 @@ app.get("/oauth2/callback", async (req, res) => {
 });
 
 app.get("/api/portfolio", async (req, res) => {
-  if (!req.session.tokens) {
+  const authToken = pickAuthToken(req);
+  const tokenFromBearer = getTokensFromApiToken(authToken);
+  const tokens = req.session.tokens || tokenFromBearer;
+  if (!tokens) {
     return res.status(401).json({
       error: "Unauthorized",
       message: "Please login first: /auth/google"
@@ -156,7 +203,7 @@ app.get("/api/portfolio", async (req, res) => {
   }
 
   try {
-    oauth2Client.setCredentials(req.session.tokens);
+    oauth2Client.setCredentials(tokens);
     const sheets = google.sheets({ version: "v4", auth: oauth2Client });
 
     const rangesQuery = req.query.ranges;
