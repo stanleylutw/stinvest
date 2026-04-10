@@ -1605,8 +1605,10 @@
     async function loadData() {
       statusText.textContent = "更新中...";
       try {
-        const fetchOptions = { cache: "no-store" };
-        if (USE_LOCAL_BACKEND) fetchOptions.credentials = "include";
+        const fetchOptions = {
+          cache: "no-store",
+          credentials: "include"
+        };
         const res = await fetch(API_URL, fetchOptions);
         if (!res.ok) {
           throw new Error(await res.text());
