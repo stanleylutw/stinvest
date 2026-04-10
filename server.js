@@ -14,6 +14,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "https://stanleylutw.github.io"
 ];
+const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
 
 if (isProduction) {
   app.set("trust proxy", 1);
@@ -85,11 +86,38 @@ app.get("/health", (_req, res) => {
   res.type("text/plain").send("ok");
 });
 
-app.get("/auth/google", (_req, res) => {
+function normalizeReturnTo(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const u = new URL(raw);
+    if (!ALLOWED_RETURN_ORIGINS.has(u.origin)) return null;
+    return u.toString();
+  } catch (_err) {
+    return null;
+  }
+}
+
+function encodeState(payload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeState(stateText) {
+  if (!stateText || typeof stateText !== "string") return {};
+  try {
+    const json = Buffer.from(stateText, "base64url").toString("utf8");
+    return JSON.parse(json);
+  } catch (_err) {
+    return {};
+  }
+}
+
+app.get("/auth/google", (req, res) => {
+  const returnTo = normalizeReturnTo(req.query.returnTo);
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: SCOPES
+    scope: SCOPES,
+    state: encodeState({ returnTo })
   });
   res.redirect(authUrl);
 });
@@ -103,9 +131,16 @@ app.get("/oauth2/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code);
     req.session.tokens = tokens;
-    res.type("text/plain").send(
-      "OAuth success. Now open /api/portfolio to fetch Google Sheets data."
-    );
+    const state = decodeState(req.query.state);
+    const returnTo = normalizeReturnTo(state.returnTo);
+    req.session.save(() => {
+      if (returnTo) {
+        return res.redirect(returnTo);
+      }
+      return res.type("text/plain").send(
+        "OAuth success. Now open /api/portfolio to fetch Google Sheets data."
+      );
+    });
   } catch (error) {
     console.error("OAuth callback error:", error);
     res.status(500).send("OAuth failed. Check server logs.");

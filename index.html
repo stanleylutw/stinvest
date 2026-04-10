@@ -649,9 +649,13 @@
   <script>
     const PROD_API_BASE = "https://stinvest.onrender.com";
     const USE_LOCAL_BACKEND = location.hostname === "localhost";
+    const AUTH_REDIRECT_TRIED_KEY = "stinvest_auth_redirect_tried";
     const API_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/portfolio"
       : `${PROD_API_BASE}/api/portfolio`;
+    const AUTH_URL = USE_LOCAL_BACKEND
+      ? "http://localhost:3000/auth/google"
+      : `${PROD_API_BASE}/auth/google`;
     const REFRESH_MS = 60 * 1000;
 
     const statusText = document.getElementById("statusText");
@@ -1610,9 +1614,21 @@
           credentials: "include"
         };
         const res = await fetch(API_URL, fetchOptions);
+        if (res.status === 401) {
+          const tried = sessionStorage.getItem(AUTH_REDIRECT_TRIED_KEY) === "1";
+          if (!tried) {
+            sessionStorage.setItem(AUTH_REDIRECT_TRIED_KEY, "1");
+            statusText.textContent = "未登入，導向 Google 授權...";
+            const returnTo = encodeURIComponent(window.location.href);
+            window.location.href = `${AUTH_URL}?returnTo=${returnTo}`;
+            return;
+          }
+          throw new Error("Unauthorized after login redirect. Please allow third-party cookies and retry.");
+        }
         if (!res.ok) {
           throw new Error(await res.text());
         }
+        sessionStorage.removeItem(AUTH_REDIRECT_TRIED_KEY);
         const data = await res.json();
         const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
         const distItems = parseDistribution(data);
@@ -1637,7 +1653,11 @@
         updatedAt.textContent = new Date().toLocaleString("zh-TW");
       } catch (err) {
         console.error(err);
-        statusText.textContent = "更新失敗";
+        if (String(err?.message || "").includes("third-party cookies")) {
+          statusText.textContent = "更新失敗（請允許第三方 Cookie 後重試）";
+        } else {
+          statusText.textContent = "更新失敗";
+        }
       }
     }
 
