@@ -84,6 +84,23 @@
       color: #b42318;
     }
 
+    .auth-sync-row {
+      margin-top: 0.55rem;
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .auth-sync-status {
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+
+    .auth-sync-status.error {
+      color: #b42318;
+    }
+
     .btn {
       border: 1px solid var(--line);
       background: #fff;
@@ -599,6 +616,10 @@
         <button id="btnSaveSheetLink" class="btn" type="button">綁定 Sheet</button>
       </div>
       <div id="sheetBindStatus" class="auth-sheet-status">尚未綁定 Google Sheet</div>
+      <div class="auth-sync-row">
+        <button id="btnSyncNow" class="btn" type="button" disabled>立即同步</button>
+        <span id="syncStatusText" class="auth-sync-status">同步狀態：待命</span>
+      </div>
     </section>
 
     <section id="sec-overview" class="hero">
@@ -771,6 +792,8 @@
     const sheetUrlInput = document.getElementById("sheetUrlInput");
     const btnSaveSheetLink = document.getElementById("btnSaveSheetLink");
     const sheetBindStatus = document.getElementById("sheetBindStatus");
+    const btnSyncNow = document.getElementById("btnSyncNow");
+    const syncStatusText = document.getElementById("syncStatusText");
     const holdingsHead = document.getElementById("holdingsHead");
     const holdingsBody = document.getElementById("holdingsBody");
     const allocRows = document.getElementById("allocRows");
@@ -811,6 +834,7 @@
     let visibleColumns = [];
     let refreshTimer = null;
     let currentUserId = "";
+    let currentLinkedSheetRowId = "";
     const supabaseClient = SUPABASE_LOGIN_ENABLED
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
@@ -1731,6 +1755,12 @@
       sheetBindStatus.classList.toggle("error", !!isError);
     }
 
+    function setSyncStatus(message, isError = false) {
+      if (!syncStatusText) return;
+      syncStatusText.textContent = `同步狀態：${message}`;
+      syncStatusText.classList.toggle("error", !!isError);
+    }
+
     function parseSpreadsheetId(inputText) {
       const src = String(inputText || "").trim();
       if (!src) return "";
@@ -1744,7 +1774,7 @@
       if (!supabaseClient || !userId) return;
       const { data, error } = await supabaseClient
         .from("user_sheets")
-        .select("sheet_url, spreadsheet_id, last_synced_at")
+        .select("id, sheet_url, spreadsheet_id, last_synced_at")
         .eq("user_id", userId)
         .eq("is_active", true)
         .order("updated_at", { ascending: false })
@@ -1755,15 +1785,21 @@
       }
       const row = Array.isArray(data) && data.length ? data[0] : null;
       if (!row) {
+        currentLinkedSheetRowId = "";
+        btnSyncNow.disabled = true;
         sheetUrlInput.value = "";
         setSheetBindStatus("尚未綁定 Google Sheet");
+        setSyncStatus("待命");
         return;
       }
+      currentLinkedSheetRowId = row.id || "";
+      btnSyncNow.disabled = false;
       sheetUrlInput.value = row.sheet_url || row.spreadsheet_id || "";
       const synced = row.last_synced_at
         ? `，上次同步：${new Date(row.last_synced_at).toLocaleString("zh-TW")}`
         : "";
       setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
+      setSyncStatus(row.last_synced_at ? `已同步（${new Date(row.last_synced_at).toLocaleString("zh-TW")}）` : "待命");
     }
 
     async function saveLinkedSheet() {
@@ -1801,12 +1837,37 @@
             }
           );
         if (upsertError) throw upsertError;
-
+        await loadLinkedSheet(currentUserId);
         setSheetBindStatus(`已綁定：${spreadsheetId}`);
       } catch (err) {
         setSheetBindStatus(`綁定失敗：${err.message || err}`, true);
       } finally {
         btnSaveSheetLink.disabled = false;
+      }
+    }
+
+    async function syncNow() {
+      if (!currentUserId || !currentLinkedSheetRowId) {
+        setSyncStatus("請先綁定 Sheet", true);
+        return;
+      }
+      btnSyncNow.disabled = true;
+      setSyncStatus("同步中...");
+      try {
+        await loadData();
+        const nowIso = new Date().toISOString();
+        const { error } = await supabaseClient
+          .from("user_sheets")
+          .update({ last_synced_at: nowIso })
+          .eq("id", currentLinkedSheetRowId)
+          .eq("user_id", currentUserId);
+        if (error) throw error;
+        await loadLinkedSheet(currentUserId);
+        setSyncStatus(`完成（${new Date().toLocaleString("zh-TW")}）`);
+      } catch (err) {
+        setSyncStatus(`失敗（${err.message || err}）`, true);
+      } finally {
+        btnSyncNow.disabled = !currentLinkedSheetRowId;
       }
     }
 
@@ -1833,6 +1894,7 @@
         btnLoginGoogle.style.display = "none";
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
+        btnSyncNow.disabled = true;
         sheetUrlInput.disabled = true;
         setAppLocked(false);
         return true;
@@ -1842,12 +1904,15 @@
       } = await supabaseClient.auth.getSession();
       if (!session) {
         currentUserId = "";
+        currentLinkedSheetRowId = "";
         authUserText.textContent = "未登入";
         btnLoginGoogle.style.display = "inline-block";
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
+        btnSyncNow.disabled = true;
         sheetUrlInput.disabled = true;
         setSheetBindStatus("請先登入，再綁定 Google Sheet");
+        setSyncStatus("待命");
         setAppLocked(true);
         return false;
       }
@@ -2003,6 +2068,7 @@
     btnLoginGoogle.addEventListener("click", loginWithGoogle);
     btnLogout.addEventListener("click", logoutSupabase);
     btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
+    btnSyncNow.addEventListener("click", syncNow);
     sheetUrlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
