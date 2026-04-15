@@ -56,6 +56,34 @@
       margin-right: 0.3rem;
     }
 
+    .auth-sheet-row {
+      margin-top: 0.8rem;
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 0.6rem;
+      align-items: center;
+    }
+
+    .auth-sheet-row input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 0.7rem;
+      padding: 0.5rem 0.65rem;
+      font-size: 0.9rem;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .auth-sheet-status {
+      margin-top: 0.45rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .auth-sheet-status.error {
+      color: #b42318;
+    }
+
     .btn {
       border: 1px solid var(--line);
       background: #fff;
@@ -530,6 +558,10 @@
     }
 
     @media (max-width: 640px) {
+      .auth-sheet-row {
+        grid-template-columns: 1fr;
+      }
+
       .wrap {
         width: 95vw;
       }
@@ -562,6 +594,11 @@
         <button id="btnLoginGoogle" class="btn primary" type="button">Google 登入</button>
         <button id="btnLogout" class="btn" type="button" style="display:none;">登出</button>
       </div>
+      <div class="auth-sheet-row">
+        <input id="sheetUrlInput" type="text" placeholder="貼上 Google Sheet 網址（或 spreadsheetId）" />
+        <button id="btnSaveSheetLink" class="btn" type="button">綁定 Sheet</button>
+      </div>
+      <div id="sheetBindStatus" class="auth-sheet-status">尚未綁定 Google Sheet</div>
     </section>
 
     <section id="sec-overview" class="hero">
@@ -711,9 +748,10 @@
     const PROD_API_BASE = "https://stinvest.onrender.com";
     const USE_LOCAL_BACKEND = location.hostname === "localhost";
     const AUTH_REDIRECT_TRIED_KEY = "stinvest_auth_redirect_tried";
+    const AUTH_REDIRECT_AT_KEY = "stinvest_auth_redirect_at";
     const API_TOKEN_STORAGE_KEY = "stinvest_api_token";
     const SUPABASE_URL = "https://hdskcqidawcrassxbxio.supabase.co";
-    const SUPABASE_ANON_KEY = "REPLACE_WITH_SUPABASE_ANON_KEY";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhkc2tjcWlkYXdjcmFzc3hieGlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMDQ5OTAsImV4cCI6MjA5MTc4MDk5MH0.AqJrypKLlrwFR-RR9FKyzrgh-6TeBiUkgfVmdyGqbtk";
     const SUPABASE_LOGIN_ENABLED = SUPABASE_ANON_KEY !== "REPLACE_WITH_SUPABASE_ANON_KEY";
     const API_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/portfolio"
@@ -730,6 +768,9 @@
     const authUserText = document.getElementById("authUserText");
     const btnLoginGoogle = document.getElementById("btnLoginGoogle");
     const btnLogout = document.getElementById("btnLogout");
+    const sheetUrlInput = document.getElementById("sheetUrlInput");
+    const btnSaveSheetLink = document.getElementById("btnSaveSheetLink");
+    const sheetBindStatus = document.getElementById("sheetBindStatus");
     const holdingsHead = document.getElementById("holdingsHead");
     const holdingsBody = document.getElementById("holdingsBody");
     const allocRows = document.getElementById("allocRows");
@@ -769,6 +810,7 @@
     let latestHistorySnapshots = [];
     let visibleColumns = [];
     let refreshTimer = null;
+    let currentUserId = "";
     const supabaseClient = SUPABASE_LOGIN_ENABLED
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
@@ -1683,6 +1725,91 @@
       appMain.classList.toggle("app-locked", locked);
     }
 
+    function setSheetBindStatus(message, isError = false) {
+      if (!sheetBindStatus) return;
+      sheetBindStatus.textContent = message;
+      sheetBindStatus.classList.toggle("error", !!isError);
+    }
+
+    function parseSpreadsheetId(inputText) {
+      const src = String(inputText || "").trim();
+      if (!src) return "";
+      const m = src.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (m) return m[1];
+      if (/^[a-zA-Z0-9-_]{20,}$/.test(src)) return src;
+      return "";
+    }
+
+    async function loadLinkedSheet(userId) {
+      if (!supabaseClient || !userId) return;
+      const { data, error } = await supabaseClient
+        .from("user_sheets")
+        .select("sheet_url, spreadsheet_id, last_synced_at")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (error) {
+        setSheetBindStatus(`讀取綁定失敗：${error.message}`, true);
+        return;
+      }
+      const row = Array.isArray(data) && data.length ? data[0] : null;
+      if (!row) {
+        sheetUrlInput.value = "";
+        setSheetBindStatus("尚未綁定 Google Sheet");
+        return;
+      }
+      sheetUrlInput.value = row.sheet_url || row.spreadsheet_id || "";
+      const synced = row.last_synced_at
+        ? `，上次同步：${new Date(row.last_synced_at).toLocaleString("zh-TW")}`
+        : "";
+      setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
+    }
+
+    async function saveLinkedSheet() {
+      if (!supabaseClient || !currentUserId) {
+        setSheetBindStatus("請先登入再綁定 Sheet", true);
+        return;
+      }
+      const sheetUrl = String(sheetUrlInput.value || "").trim();
+      const spreadsheetId = parseSpreadsheetId(sheetUrl);
+      if (!spreadsheetId) {
+        setSheetBindStatus("格式錯誤：請貼 Google Sheet 網址或 spreadsheetId", true);
+        return;
+      }
+      setSheetBindStatus("綁定中...");
+      btnSaveSheetLink.disabled = true;
+      try {
+        const { error: clearError } = await supabaseClient
+          .from("user_sheets")
+          .update({ is_active: false })
+          .eq("user_id", currentUserId)
+          .eq("is_active", true);
+        if (clearError) throw clearError;
+
+        const { error: upsertError } = await supabaseClient
+          .from("user_sheets")
+          .upsert(
+            {
+              user_id: currentUserId,
+              sheet_url: sheetUrl,
+              spreadsheet_id: spreadsheetId,
+              is_active: true
+            },
+            {
+              onConflict: "user_id,spreadsheet_id"
+            }
+          );
+        if (upsertError) throw upsertError;
+
+        setSheetBindStatus(`已綁定：${spreadsheetId}`);
+      } catch (err) {
+        setSheetBindStatus(`綁定失敗：${err.message || err}`, true);
+      } finally {
+        btnSaveSheetLink.disabled = false;
+      }
+    }
+
     async function loginWithGoogle() {
       if (!supabaseClient) return;
       await supabaseClient.auth.signInWithOAuth({
@@ -1705,6 +1832,8 @@
         authUserText.textContent = "未設定 Supabase anon key（請先填入）";
         btnLoginGoogle.style.display = "none";
         btnLogout.style.display = "none";
+        btnSaveSheetLink.disabled = true;
+        sheetUrlInput.disabled = true;
         setAppLocked(false);
         return true;
       }
@@ -1712,15 +1841,23 @@
         data: { session }
       } = await supabaseClient.auth.getSession();
       if (!session) {
+        currentUserId = "";
         authUserText.textContent = "未登入";
         btnLoginGoogle.style.display = "inline-block";
         btnLogout.style.display = "none";
+        btnSaveSheetLink.disabled = true;
+        sheetUrlInput.disabled = true;
+        setSheetBindStatus("請先登入，再綁定 Google Sheet");
         setAppLocked(true);
         return false;
       }
+      currentUserId = session.user?.id || "";
       authUserText.textContent = session.user?.email || "已登入";
       btnLoginGoogle.style.display = "none";
       btnLogout.style.display = "inline-block";
+      btnSaveSheetLink.disabled = false;
+      sheetUrlInput.disabled = false;
+      await loadLinkedSheet(currentUserId);
       setAppLocked(false);
       return true;
     }
@@ -1735,6 +1872,11 @@
       const cleanUrl = `${window.location.pathname}${window.location.search}`;
       window.history.replaceState({}, "", cleanUrl);
       return token;
+    }
+
+    function clearAuthRedirectFlags() {
+      sessionStorage.removeItem(AUTH_REDIRECT_TRIED_KEY);
+      sessionStorage.removeItem(AUTH_REDIRECT_AT_KEY);
     }
 
     async function loadData() {
@@ -1752,8 +1894,15 @@
         const res = await fetch(API_URL, fetchOptions);
         if (res.status === 401) {
           const tried = sessionStorage.getItem(AUTH_REDIRECT_TRIED_KEY) === "1";
-          if (!tried) {
+          const triedAt = Number(sessionStorage.getItem(AUTH_REDIRECT_AT_KEY) || 0);
+          const elapsed = Date.now() - triedAt;
+          if (tried && (!Number.isFinite(triedAt) || elapsed > 2 * 60 * 1000)) {
+            clearAuthRedirectFlags();
+          }
+          const canRetry = sessionStorage.getItem(AUTH_REDIRECT_TRIED_KEY) !== "1";
+          if (canRetry) {
             sessionStorage.setItem(AUTH_REDIRECT_TRIED_KEY, "1");
+            sessionStorage.setItem(AUTH_REDIRECT_AT_KEY, String(Date.now()));
             statusText.textContent = "未登入，導向 Google 授權...";
             const returnTo = encodeURIComponent(window.location.href);
             window.location.href = `${AUTH_URL}?returnTo=${returnTo}`;
@@ -1765,7 +1914,7 @@
         if (!res.ok) {
           throw new Error(await res.text());
         }
-        sessionStorage.removeItem(AUTH_REDIRECT_TRIED_KEY);
+        clearAuthRedirectFlags();
         const data = await res.json();
         const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
         const distItems = parseDistribution(data);
@@ -1853,6 +2002,13 @@
     sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     btnLoginGoogle.addEventListener("click", loginWithGoogle);
     btnLogout.addEventListener("click", logoutSupabase);
+    btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
+    sheetUrlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveLinkedSheet();
+      }
+    });
 
     (async () => {
       const ready = await ensureSupabaseAuth();
