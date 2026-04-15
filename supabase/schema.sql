@@ -51,6 +51,13 @@ create table if not exists public.portfolio_items (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  money_masked boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_user_sheets_user_active on public.user_sheets(user_id, is_active);
 create index if not exists idx_sync_logs_user_created on public.sync_logs(user_id, created_at desc);
 create index if not exists idx_portfolio_items_user_sheet on public.portfolio_items(user_id, sheet_id, sheet_order);
@@ -70,9 +77,15 @@ create trigger trg_user_sheets_updated_at
 before update on public.user_sheets
 for each row execute function public.set_updated_at();
 
+drop trigger if exists trg_user_settings_updated_at on public.user_settings;
+create trigger trg_user_settings_updated_at
+before update on public.user_settings
+for each row execute function public.set_updated_at();
+
 alter table public.user_sheets enable row level security;
 alter table public.sync_logs enable row level security;
 alter table public.portfolio_items enable row level security;
+alter table public.user_settings enable row level security;
 
 drop policy if exists "user_sheets_owner_all" on public.user_sheets;
 create policy "user_sheets_owner_all" on public.user_sheets
@@ -84,4 +97,8 @@ for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "portfolio_items_owner_all" on public.portfolio_items;
 create policy "portfolio_items_owner_all" on public.portfolio_items
+for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "user_settings_owner_all" on public.user_settings;
+create policy "user_settings_owner_all" on public.user_settings
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

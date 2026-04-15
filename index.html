@@ -43,41 +43,246 @@
       margin-bottom: 1rem;
     }
 
-    .auth-row {
-      display: flex;
-      gap: 0.7rem;
+    .settings-fab {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      z-index: 2;
+      display: inline-flex;
       align-items: center;
-      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .money-visibility-btn {
+      border: none;
+      background: transparent;
+      color: #64748b;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 0.3rem;
+      vertical-align: middle;
+    }
+
+    .money-visibility-btn:hover {
+      color: #334155;
+    }
+
+    .money-eye-icon {
+      width: 22px;
+      height: 22px;
+      display: block;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .money-eye-icon .fill {
+      fill: currentColor;
+      stroke: none;
+    }
+
+    .settings-fab:hover {
+      opacity: 0.88;
+    }
+
+    .settings-icon-img {
+      width: 70%;
+      height: 70%;
+      display: block;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
+    }
+
+    .settings-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 1190;
+    }
+
+    .settings-open .settings-backdrop {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .settings-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+      border-radius: 0;
+      border-left: none;
+      transform: translateX(104%);
+      transition: transform 0.25s ease;
+      z-index: 1210;
+      overflow-y: auto;
+      padding: 0;
+      box-shadow: -18px 0 36px rgba(15, 23, 42, 0.2);
+      background:
+        radial-gradient(1100px 600px at -10% -20%, #f6e7d8 0%, transparent 60%),
+        radial-gradient(900px 450px at 100% 0%, #d9eef0 0%, transparent 55%),
+        var(--bg);
+      overflow-x: hidden;
+    }
+
+    .settings-open .settings-panel {
+      transform: translateX(0);
+    }
+
+    .settings-panel.card {
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      background:
+        radial-gradient(1100px 600px at -10% -20%, #f6e7d8 0%, transparent 60%),
+        radial-gradient(900px 450px at 100% 0%, #d9eef0 0%, transparent 55%),
+        var(--bg);
+    }
+
+    .settings-wrap {
+      width: min(1200px, 94vw);
+      margin: 2.4rem auto 3rem;
+    }
+
+    .settings-head {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0.55rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: var(--surface);
+      box-shadow: var(--card-shadow);
+    }
+
+    .settings-title {
+      margin: 0;
+      font-size: 1.08rem;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+      color: #1e293b;
+    }
+
+    .settings-back-btn {
+      border: none;
+      background: transparent;
+      color: #334155;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 1.15rem;
+      line-height: 1;
+    }
+
+    .settings-back-btn:hover {
+      background: #f1f5f9;
+    }
+
+    .settings-close {
+      display: none;
+    }
+
+    .settings-body {
+      padding: 0.85rem 0 0;
+      display: grid;
+      gap: 0.9rem;
+      min-width: 0;
+    }
+
+    .settings-group {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 1rem;
+      padding: 1rem;
+      box-shadow: var(--card-shadow);
+      min-width: 0;
+    }
+
+    .settings-group-title {
+      margin: 0 0 0.65rem;
+      font-size: 0.83rem;
+      color: #64748b;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .auth-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.65rem;
+      align-items: center;
     }
 
     .auth-user {
-      color: var(--muted);
-      font-size: 0.92rem;
-      margin-right: 0.3rem;
+      color: #334155;
+      font-size: 0.95rem;
+      min-height: 38px;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.7rem;
+      display: flex;
+      align-items: center;
+      padding: 0.45rem 0.6rem;
+      background: #f8fafc;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .field-label {
+      display: block;
+      color: #475569;
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
     }
 
     .auth-sheet-row {
-      margin-top: 0.8rem;
+      margin-top: 0;
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto;
+      grid-template-columns: 1fr;
       gap: 0.6rem;
       align-items: center;
     }
 
     .auth-sheet-row input {
       width: 100%;
-      border: 1px solid var(--line);
+      border: 1px solid #d8dee8;
       border-radius: 0.7rem;
-      padding: 0.5rem 0.65rem;
-      font-size: 0.9rem;
+      padding: 0.62rem 0.7rem;
+      font-size: 0.92rem;
       background: #fff;
-      color: var(--ink);
+      color: #1e293b;
     }
 
     .auth-sheet-status {
-      margin-top: 0.45rem;
-      font-size: 0.85rem;
-      color: var(--muted);
+      margin-top: 0;
+      font-size: 0.84rem;
+      color: #64748b;
+      line-height: 1.45;
+      word-break: break-all;
     }
 
     .auth-sheet-status.error {
@@ -92,9 +297,44 @@
       flex-wrap: wrap;
     }
 
+    .sync-mode-row {
+      margin-top: 0.15rem;
+      margin-bottom: 0.25rem;
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr);
+      gap: 0.55rem;
+      align-items: center;
+    }
+
+    .sync-mode-label {
+      color: #475569;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .sync-mode-select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid #d8dee8;
+      border-radius: 0.7rem;
+      padding: 0.5rem 0.65rem;
+      background: #fff;
+      color: #1e293b;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .sync-mode-hint {
+      margin-top: 0.25rem;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+
     .auth-sync-status {
       font-size: 0.84rem;
-      color: var(--muted);
+      color: #64748b;
+      line-height: 1.45;
+      word-break: break-word;
     }
 
     .auth-sync-status.error {
@@ -102,27 +342,33 @@
     }
 
     .btn {
-      border: 1px solid var(--line);
+      border: 1px solid #cbd5e1;
       background: #fff;
-      color: var(--ink);
+      color: #1e293b;
       border-radius: 0.7rem;
-      padding: 0.45rem 0.7rem;
+      padding: 0.5rem 0.8rem;
       font-size: 0.9rem;
+      font-weight: 700;
       cursor: pointer;
     }
 
     .btn:hover {
-      background: #f8f6f2;
+      background: #f8fafc;
     }
 
     .btn.primary {
-      border-color: #0a9396;
-      background: #0a9396;
+      border-color: #0f766e;
+      background: #0f766e;
       color: #fff;
     }
 
     .btn.primary:hover {
-      background: #087f82;
+      background: #0d6a63;
+    }
+
+    .btn.full {
+      width: 100%;
+      justify-content: center;
     }
 
     .app-locked #sec-overview,
@@ -143,28 +389,35 @@
       background: linear-gradient(125deg, #004e64, #0a9396);
       color: #f4fbfc;
       border-radius: 1rem;
-      padding: 1.4rem 1.5rem;
+      padding: 0.85rem 1.2rem;
       box-shadow: var(--card-shadow);
       animation: enter 0.5s ease-out;
+      position: relative;
     }
 
     .hero h1 {
       margin: 0;
-      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      font-size: clamp(1.15rem, 2.2vw, 1.6rem);
     }
 
-    .hero p {
-      margin: 0.65rem 0 0;
-      opacity: 0.94;
+    .hero-updated {
+      margin-top: 0.32rem;
+      font-size: 0.8rem;
+      color: #d5dde8;
+      font-weight: 600;
+      letter-spacing: 0.01em;
     }
 
-    .statusline {
-      margin-top: 0.65rem;
-      display: flex;
-      gap: 0.8rem;
-      flex-wrap: wrap;
-      font-size: 0.88rem;
-      opacity: 0.95;
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     .kpis {
@@ -186,6 +439,12 @@
       color: var(--muted);
       display: block;
       margin-bottom: 0.35rem;
+    }
+
+    .kpi-title-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
     }
 
     .kpi b {
@@ -575,10 +834,6 @@
     }
 
     @media (max-width: 640px) {
-      .auth-sheet-row {
-        grid-template-columns: 1fr;
-      }
-
       .wrap {
         width: 95vw;
       }
@@ -598,38 +853,88 @@
       .section-head {
         flex-wrap: wrap;
       }
+
+      .settings-body {
+        padding: 0.85rem 0 0;
+      }
+
+      .settings-panel {
+        width: 100vw;
+        box-shadow: none;
+      }
+
+      .settings-wrap {
+        width: 95vw;
+        margin: 1.2rem auto 2rem;
+      }
+
+      .auth-row {
+        grid-template-columns: 1fr;
+      }
+
+      .sync-mode-row {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+      }
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <div id="settingsBackdrop" class="settings-backdrop" aria-hidden="true"></div>
   <main class="wrap app-locked" id="appMain">
-    <section id="sec-auth" class="card auth-card">
-      <div class="auth-row">
-        <strong>帳號</strong>
-        <span id="authUserText" class="auth-user">檢查登入中...</span>
-        <button id="btnLoginGoogle" class="btn primary" type="button">Google 登入</button>
-        <button id="btnLogout" class="btn" type="button" style="display:none;">登出</button>
-      </div>
-      <div class="auth-sheet-row">
-        <input id="sheetUrlInput" type="text" placeholder="貼上 Google Sheet 網址（或 spreadsheetId）" />
-        <button id="btnSaveSheetLink" class="btn" type="button">綁定 Sheet</button>
-      </div>
-      <div id="sheetBindStatus" class="auth-sheet-status">尚未綁定 Google Sheet</div>
-      <div class="auth-sync-row">
-        <button id="btnSyncNow" class="btn" type="button" disabled>立即同步</button>
-        <span id="syncStatusText" class="auth-sync-status">同步狀態：待命</span>
+    <section id="sec-auth" class="card auth-card settings-panel" aria-hidden="true">
+      <div class="settings-wrap">
+        <div class="settings-head">
+          <button id="btnBackSettings" class="settings-back-btn" type="button" aria-label="返回">←</button>
+          <h2 class="settings-title">設定</h2>
+          <button id="btnCloseSettings" class="settings-close" type="button">關閉</button>
+        </div>
+        <div class="settings-body">
+          <div class="settings-group">
+            <h3 class="settings-group-title">帳號</h3>
+            <label class="field-label">目前帳號</label>
+            <div class="auth-row">
+              <span id="authUserText" class="auth-user">檢查登入中...</span>
+              <button id="btnLoginGoogle" class="btn primary" type="button">Google 登入</button>
+              <button id="btnLogout" class="btn" type="button" style="display:none;">登出</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3 class="settings-group-title">資料來源</h3>
+            <label class="field-label" for="sheetUrlInput">Google Sheet 網址 / Spreadsheet ID</label>
+            <div class="auth-sheet-row">
+              <input id="sheetUrlInput" type="text" placeholder="貼上 Google Sheet 網址（或 spreadsheetId）" />
+              <button id="btnSaveSheetLink" class="btn full" type="button">綁定 Sheet</button>
+            </div>
+            <div id="sheetBindStatus" class="auth-sheet-status">尚未綁定 Google Sheet</div>
+          </div>
+          <div class="settings-group">
+            <h3 class="settings-group-title">同步</h3>
+            <div class="sync-mode-row">
+              <span class="sync-mode-label">同步方式</span>
+              <select id="syncModeSelect" class="sync-mode-select">
+                <option value="manual" selected>手動（預設）</option>
+                <option value="auto">自動</option>
+              </select>
+            </div>
+            <div id="syncModeHint" class="sync-mode-hint">目前：手動同步。點「立即同步」才會更新資料。</div>
+            <div class="auth-sync-row">
+              <button id="btnSyncNow" class="btn" type="button" disabled>立即同步</button>
+              <span id="syncStatusText" class="auth-sync-status">同步狀態：待命</span>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section id="sec-overview" class="hero">
-      <h1>ST投資分析總覽</h1>
-      <div>
-        <div class="statusline">
-          <span>狀態：<strong id="statusText">待載入</strong></span>
-          <span>上次更新：<strong id="updatedAt">--</strong></span>
-        </div>
-      </div>
+      <button id="btnOpenSettings" class="settings-fab" type="button" aria-label="設定" title="設定">
+        <img class="settings-icon-img" src="./settings-icon.png" alt="" />
+      </button>
+      <h1>總覽</h1>
+      <div class="hero-updated">上次更新：<span id="updatedAt">--</span></div>
+      <span id="statusText" class="sr-only">待載入</span>
     </section>
 
     <section id="sec-kpis" class="card collapsible-section">
@@ -641,7 +946,14 @@
       </div>
       <div class="collapsible-body">
         <div class="kpis">
-          <article class="kpi"><small>總市值</small><b id="kpiMarketValue">--</b><em class="kpi-delta" id="kpiDeltaMarketValue">■ --</em></article>
+          <article class="kpi">
+            <small class="kpi-title-row">
+              <span>總市值</span>
+              <button id="btnToggleMoney" class="money-visibility-btn" type="button" aria-label="隱藏金額" title="隱藏金額"></button>
+            </small>
+            <b id="kpiMarketValue">--</b>
+            <em class="kpi-delta" id="kpiDeltaMarketValue">■ --</em>
+          </article>
           <article class="kpi"><small>持有成本</small><b id="kpiCost">--</b></article>
           <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b></article>
           <article class="kpi"><small>累積配息</small><b id="kpiDividend">--</b></article>
@@ -787,17 +1099,26 @@
       ? "http://localhost:3000/auth/google"
       : `${PROD_API_BASE}/auth/google`;
     const REFRESH_MS = 60 * 1000;
+    const AUTO_SYNC_MS = 3 * 60 * 1000;
+    const SYNC_MODE_KEY_PREFIX = "stinvest_sync_mode_";
 
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
     const versionText = document.getElementById("versionText");
     const appMain = document.getElementById("appMain");
+    const secAuth = document.getElementById("sec-auth");
+    const btnOpenSettings = document.getElementById("btnOpenSettings");
+    const btnBackSettings = document.getElementById("btnBackSettings");
+    const btnCloseSettings = document.getElementById("btnCloseSettings");
+    const settingsBackdrop = document.getElementById("settingsBackdrop");
     const authUserText = document.getElementById("authUserText");
     const btnLoginGoogle = document.getElementById("btnLoginGoogle");
     const btnLogout = document.getElementById("btnLogout");
     const sheetUrlInput = document.getElementById("sheetUrlInput");
     const btnSaveSheetLink = document.getElementById("btnSaveSheetLink");
     const sheetBindStatus = document.getElementById("sheetBindStatus");
+    const syncModeSelect = document.getElementById("syncModeSelect");
+    const syncModeHint = document.getElementById("syncModeHint");
     const btnSyncNow = document.getElementById("btnSyncNow");
     const syncStatusText = document.getElementById("syncStatusText");
     const holdingsHead = document.getElementById("holdingsHead");
@@ -814,6 +1135,7 @@
     const histY2Select = document.getElementById("histY2Select");
     const historyTrendChart = document.getElementById("historyTrendChart");
     const kpiCompareInfo = document.getElementById("kpiCompareInfo");
+    const btnToggleMoney = document.getElementById("btnToggleMoney");
 
     const kpiEls = {
       marketValue: document.getElementById("kpiMarketValue"),
@@ -837,13 +1159,19 @@
     let latestHistoryDaily = [];
     let latestHistoryLatest = null;
     let latestHistorySnapshots = [];
+    let latestSummary = null;
     let visibleColumns = [];
     let refreshTimer = null;
+    let autoSyncTimer = null;
+    let isSyncInProgress = false;
+    let syncMode = "manual";
+    let moneyMasked = false;
     let currentUserId = "";
     let currentLinkedSheetRowId = "";
     const supabaseClient = SUPABASE_LOGIN_ENABLED
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
+    const MONEY_MASK_TEXT = "*****";
 
     const HISTORY_METRIC_OPTIONS = [
       { key: "none", label: "無", axis: "none" },
@@ -909,7 +1237,9 @@
 
     function currency(text) {
       const n = toNumber(text);
-      return Number.isFinite(n) ? "$" + n.toLocaleString("en-US") : "--";
+      if (!Number.isFinite(n)) return "--";
+      if (moneyMasked) return MONEY_MASK_TEXT;
+      return "$" + n.toLocaleString("en-US");
     }
 
     function classByValue(text) {
@@ -929,6 +1259,25 @@
 
     function td(value, className = "") {
       return `<td class="${className}">${value || "--"}</td>`;
+    }
+
+    function isMoneyColumn(columnIndex) {
+      const moneyColumns = [
+        idx.price,
+        idx.holdingCost,
+        idx.accDividend,
+        idx.profit,
+        idx.profitWithDividend,
+        idx.marketValue,
+        idx.monthlyIncome
+      ];
+      return moneyColumns.includes(columnIndex);
+    }
+
+    function maskValueIfNeeded(value, columnIndex) {
+      if (!moneyMasked || !isMoneyColumn(columnIndex)) return value;
+      const numeric = toNumber(value);
+      return Number.isFinite(numeric) ? MONEY_MASK_TEXT : value;
     }
 
     function cleanHeader(text) {
@@ -1199,6 +1548,7 @@
       if (!Number.isFinite(v)) return "--";
       if (axisType === "percent") return `${v.toFixed(0)}%`;
       if (axisType === "value") {
+        if (moneyMasked) return MONEY_MASK_TEXT;
         const wan = v / 10000;
         const abs = Math.abs(wan);
         const digits = abs >= 100 ? 0 : (abs >= 10 ? 1 : 2);
@@ -1575,11 +1925,12 @@
         items.forEach((row) => {
           const cols = [td(row.account || "--")];
           cols.push(...visibleColumns.map((col) => {
-            const value = row.cells[col.index] || "--";
+            const rawValue = row.cells[col.index] || "--";
+            const value = maskValueIfNeeded(rawValue, col.index);
             const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
             if (!needColor) return td(value);
             const isMoveCol = col.index === idx.move;
-            return td(value, isMoveCol ? classByValue(value) : classByValueBlackPositive(value));
+            return td(value, isMoveCol ? classByValue(rawValue) : classByValueBlackPositive(rawValue));
           }));
           body.push(`<tr>${cols.join("")}</tr>`);
         });
@@ -1594,11 +1945,12 @@
           const txt = hasSheetValue
             ? String(fromSheet)
             : (Number.isFinite(sum) ? sum.toLocaleString("en-US") : "--");
+          const maskedTxt = maskValueIfNeeded(txt, col.index);
           const needColor = [idx.profit, idx.profitWithDividend].includes(col.index);
-          if (!needColor) return td(txt);
+          if (!needColor) return td(maskedTxt);
           const forColor = hasSheetValue ? String(fromSheet) : String(sum);
           const klass = classByValueBlackPositive(forColor);
-          return td(txt, klass);
+          return td(maskedTxt, klass);
         }));
         body.push(`<tr class="subtotal-row">${subtotalCells.join("")}</tr>`);
 
@@ -1669,7 +2021,11 @@
       const icon = delta > 0 ? "▲" : (delta < 0 ? "▼" : "■");
       const cls = delta > 0 ? "up" : (delta < 0 ? "down" : "flat");
       const pctText = Number.isFinite(pct) ? `${delta >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(2)}%` : "--";
-      el.textContent = `${icon} ${formatSignedNumber(delta)} (${pctText})`;
+      if (moneyMasked) {
+        el.textContent = `${icon} ${MONEY_MASK_TEXT} (${pctText})`;
+      } else {
+        el.textContent = `${icon} ${formatSignedNumber(delta)} (${pctText})`;
+      }
       el.className = `kpi-delta ${cls}`;
     }
 
@@ -1685,7 +2041,8 @@
       setKpiDelta(kpiDeltaEls.marketValue, current.marketValue, previous.marketValue);
 
       if (prevSnapshot) {
-        const mvText = prevSnapshot.metrics?.["現值"]?.text || "--";
+        const mvRawText = prevSnapshot.metrics?.["現值"]?.text || "--";
+        const mvText = moneyMasked ? MONEY_MASK_TEXT : mvRawText;
         const tsText = prevSnapshot.timestamp || "--";
         const dText = prevSnapshot.reportDate || "--";
         kpiCompareInfo.textContent = `比較基準：${dText} ${tsText}（總市值 ${mvText}）`;
@@ -1755,6 +2112,12 @@
       appMain.classList.toggle("app-locked", locked);
     }
 
+    function setSettingsOpen(open) {
+      document.body.classList.toggle("settings-open", open);
+      secAuth.setAttribute("aria-hidden", open ? "false" : "true");
+      settingsBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
+    }
+
     function setSheetBindStatus(message, isError = false) {
       if (!sheetBindStatus) return;
       sheetBindStatus.textContent = message;
@@ -1765,6 +2128,127 @@
       if (!syncStatusText) return;
       syncStatusText.textContent = `同步狀態：${message}`;
       syncStatusText.classList.toggle("error", !!isError);
+    }
+
+    function syncModeStorageKey(userId) {
+      return `${SYNC_MODE_KEY_PREFIX}${userId || "guest"}`;
+    }
+
+    function applySyncModeHint() {
+      if (!syncModeHint) return;
+      if (syncMode === "auto") {
+        syncModeHint.textContent = "目前：自動同步。系統每 3 分鐘會自動同步一次。";
+      } else {
+        syncModeHint.textContent = "目前：手動同步。點「立即同步」才會更新資料。";
+      }
+    }
+
+    function configureAutoSync() {
+      if (autoSyncTimer) {
+        clearInterval(autoSyncTimer);
+        autoSyncTimer = null;
+      }
+      if (syncMode !== "auto") return;
+      if (!currentUserId || !currentLinkedSheetRowId) return;
+      autoSyncTimer = setInterval(() => {
+        syncNow({ fromAuto: true });
+      }, AUTO_SYNC_MS);
+    }
+
+    function setSyncMode(mode, { persist = true } = {}) {
+      syncMode = mode === "auto" ? "auto" : "manual";
+      if (syncModeSelect && syncModeSelect.value !== syncMode) {
+        syncModeSelect.value = syncMode;
+      }
+      applySyncModeHint();
+      configureAutoSync();
+      if (persist && currentUserId) {
+        localStorage.setItem(syncModeStorageKey(currentUserId), syncMode);
+      }
+    }
+
+    async function saveCloudSettingsPatch(patch) {
+      if (!supabaseClient || !currentUserId) return;
+      const payload = {
+        user_id: currentUserId,
+        ...patch
+      };
+      const { error } = await supabaseClient
+        .from("user_settings")
+        .upsert(payload, { onConflict: "user_id" });
+      if (error) throw error;
+    }
+
+    function applyMoneyMaskUI() {
+      if (!btnToggleMoney) return;
+      btnToggleMoney.classList.toggle("is-masked", moneyMasked);
+      btnToggleMoney.innerHTML = moneyMasked
+        ? `
+          <svg class="money-eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+            <circle cx="12" cy="12" r="3.4" class="fill"></circle>
+            <line x1="4" y1="20" x2="20" y2="4"></line>
+          </svg>
+        `
+        : `
+          <svg class="money-eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+            <circle cx="12" cy="12" r="3.4"></circle>
+            <circle cx="12" cy="12" r="1.5" class="fill"></circle>
+          </svg>
+        `;
+      btnToggleMoney.setAttribute(
+        "aria-label",
+        moneyMasked ? "目前為隱藏金額，點擊可顯示" : "目前為顯示金額，點擊可隱藏"
+      );
+      btnToggleMoney.setAttribute(
+        "title",
+        moneyMasked ? "顯示金額" : "隱藏金額"
+      );
+    }
+
+    function rerenderMoneySensitiveViews() {
+      if (latestSummary) {
+        renderKpis(latestSummary);
+        renderKpiDeltas(latestSummary, {
+          daily: latestHistoryDaily,
+          snapshots: latestHistorySnapshots
+        });
+      }
+      if (latestHoldings.length) {
+        renderHoldings(latestHoldings, latestGroupSummaries);
+      }
+      if (latestHistoryDaily.length) {
+        renderHistoryTrendChart(latestHistoryDaily);
+      }
+    }
+
+    async function setMoneyMasked(nextValue, { persistCloud = true } = {}) {
+      moneyMasked = !!nextValue;
+      applyMoneyMaskUI();
+      rerenderMoneySensitiveViews();
+      if (persistCloud && currentUserId) {
+        try {
+          await saveCloudSettingsPatch({ money_masked: moneyMasked });
+        } catch (error) {
+          console.error("Save cloud money mask setting failed:", error);
+        }
+      }
+    }
+
+    async function loadCloudSettings(userId) {
+      if (!supabaseClient || !userId) return;
+      const { data, error } = await supabaseClient
+        .from("user_settings")
+        .select("money_masked")
+        .eq("user_id", userId)
+        .limit(1);
+      if (error) {
+        console.error("Load cloud settings failed:", error);
+        return;
+      }
+      const row = Array.isArray(data) && data.length ? data[0] : null;
+      await setMoneyMasked(!!row?.money_masked, { persistCloud: false });
     }
 
     function parseSpreadsheetId(inputText) {
@@ -1796,6 +2280,7 @@
         sheetUrlInput.value = "";
         setSheetBindStatus("尚未綁定 Google Sheet");
         setSyncStatus("待命");
+        configureAutoSync();
         return;
       }
       currentLinkedSheetRowId = row.id || "";
@@ -1806,6 +2291,7 @@
         : "";
       setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
       setSyncStatus(row.last_synced_at ? `已同步（${new Date(row.last_synced_at).toLocaleString("zh-TW")}）` : "待命");
+      configureAutoSync();
     }
 
     async function saveLinkedSheet() {
@@ -1852,21 +2338,23 @@
       }
     }
 
-    async function syncNow() {
+    async function syncNow({ fromAuto = false } = {}) {
       if (!currentUserId || !currentLinkedSheetRowId) {
-        setSyncStatus("請先綁定 Sheet", true);
+        if (!fromAuto) setSyncStatus("請先綁定 Sheet", true);
         return;
       }
+      if (isSyncInProgress) return;
       const {
         data: { session }
       } = await supabaseClient.auth.getSession();
       const sbAccessToken = session?.access_token || "";
       if (!sbAccessToken) {
-        setSyncStatus("請先重新登入", true);
+        if (!fromAuto) setSyncStatus("請先重新登入", true);
         return;
       }
+      isSyncInProgress = true;
       btnSyncNow.disabled = true;
-      setSyncStatus("同步中...");
+      setSyncStatus(fromAuto ? "自動同步中..." : "同步中...");
       try {
         const apiToken = localStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
         const headers = {
@@ -1888,10 +2376,15 @@
         await res.json();
         await loadData();
         await loadLinkedSheet(currentUserId);
-        setSyncStatus(`完成（${new Date().toLocaleString("zh-TW")}）`);
+        setSyncStatus(`${fromAuto ? "自動" : ""}完成（${new Date().toLocaleString("zh-TW")}）`);
       } catch (err) {
-        setSyncStatus(`失敗（${err.message || err}）`, true);
+        if (!fromAuto) {
+          setSyncStatus(`失敗（${err.message || err}）`, true);
+        } else {
+          setSyncStatus("自動同步失敗（稍後重試）", true);
+        }
       } finally {
+        isSyncInProgress = false;
         btnSyncNow.disabled = !currentLinkedSheetRowId;
       }
     }
@@ -1920,8 +2413,11 @@
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
         btnSyncNow.disabled = true;
+        syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
+        setSyncMode("manual", { persist: false });
         setAppLocked(false);
+        setSettingsOpen(true);
         return true;
       }
       const {
@@ -1935,10 +2431,13 @@
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
         btnSyncNow.disabled = true;
+        syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
         setSheetBindStatus("請先登入，再綁定 Google Sheet");
         setSyncStatus("待命");
+        setSyncMode("manual", { persist: false });
         setAppLocked(true);
+        setSettingsOpen(true);
         return false;
       }
       currentUserId = session.user?.id || "";
@@ -1946,8 +2445,12 @@
       btnLoginGoogle.style.display = "none";
       btnLogout.style.display = "inline-block";
       btnSaveSheetLink.disabled = false;
+      syncModeSelect.disabled = false;
       sheetUrlInput.disabled = false;
       await loadLinkedSheet(currentUserId);
+      const savedMode = localStorage.getItem(syncModeStorageKey(currentUserId)) || "manual";
+      setSyncMode(savedMode, { persist: false });
+      await loadCloudSettings(currentUserId);
       setAppLocked(false);
       return true;
     }
@@ -2035,6 +2538,7 @@
         const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
         const distItems = parseDistribution(data);
         const history = parseHistory(data);
+        latestSummary = summary;
         latestHoldings = holdings;
         latestGroupSummaries = groupSummaries;
         latestDistItems = distItems;
@@ -2120,6 +2624,24 @@
     btnLogout.addEventListener("click", logoutSupabase);
     btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
     btnSyncNow.addEventListener("click", syncNow);
+    syncModeSelect.addEventListener("change", () => {
+      setSyncMode(syncModeSelect.value, { persist: true });
+      if (syncMode === "auto") {
+        syncNow({ fromAuto: true });
+      }
+    });
+    btnOpenSettings.addEventListener("click", () => setSettingsOpen(true));
+    if (btnToggleMoney) {
+      btnToggleMoney.addEventListener("click", () => {
+        setMoneyMasked(!moneyMasked);
+      });
+    }
+    btnBackSettings.addEventListener("click", () => setSettingsOpen(false));
+    btnCloseSettings.addEventListener("click", () => setSettingsOpen(false));
+    settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setSettingsOpen(false);
+    });
     sheetUrlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -2128,6 +2650,9 @@
     });
 
     (async () => {
+      setSettingsOpen(false);
+      applyMoneyMaskUI();
+      setSyncMode("manual", { persist: false });
       const ready = await ensureSupabaseAuth();
       if (!ready) return;
       await loadData();
