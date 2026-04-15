@@ -2356,14 +2356,10 @@
       btnSyncNow.disabled = true;
       setSyncStatus(fromAuto ? "自動同步中..." : "同步中...");
       try {
-        const apiToken = localStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
         const headers = {
           "Content-Type": "application/json",
-          "X-Supabase-Access-Token": sbAccessToken
+          Authorization: `Bearer ${sbAccessToken}`
         };
-        if (apiToken) {
-          headers["X-St-Token"] = apiToken;
-        }
         const res = await fetch(SYNC_API_URL, {
           method: "POST",
           credentials: "include",
@@ -2487,7 +2483,7 @@
             const cacheRes = await fetch(API_CACHED_URL, {
               cache: "no-store",
               headers: {
-                "X-Supabase-Access-Token": sbAccessToken
+                Authorization: `Bearer ${sbAccessToken}`
               }
             });
             if (cacheRes.ok) {
