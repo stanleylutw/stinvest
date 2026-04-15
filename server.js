@@ -18,6 +18,8 @@ const ALLOWED_ORIGINS = [
 const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
 const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const issuedApiTokens = new Map();
+const GOOGLE_LINK_STATE_TTL_MS = 1000 * 60 * 10;
+const pendingGoogleLinkStates = new Map();
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -130,6 +132,25 @@ function issueApiToken(tokens) {
   return apiToken;
 }
 
+function issueGoogleLinkState({ userId, returnTo }) {
+  const stateId = crypto.randomBytes(24).toString("base64url");
+  pendingGoogleLinkStates.set(stateId, {
+    userId,
+    returnTo: normalizeReturnTo(returnTo),
+    expiresAt: Date.now() + GOOGLE_LINK_STATE_TTL_MS
+  });
+  return stateId;
+}
+
+function consumeGoogleLinkState(stateId) {
+  if (!stateId || typeof stateId !== "string") return null;
+  const item = pendingGoogleLinkStates.get(stateId);
+  if (!item) return null;
+  pendingGoogleLinkStates.delete(stateId);
+  if (Date.now() > item.expiresAt) return null;
+  return item;
+}
+
 function getTokensFromApiToken(apiToken) {
   if (!apiToken || typeof apiToken !== "string") return null;
   const item = issuedApiTokens.get(apiToken);
@@ -167,6 +188,47 @@ function pickSupabaseAccessToken(req) {
     if (token.split(".").length === 3) return token;
   }
   return "";
+}
+
+async function requireSupabaseUser(req, res) {
+  const supabaseAccessToken = pickSupabaseAccessToken(req);
+  if (!supabaseAccessToken) {
+    res.status(401).json({
+      error: "Unauthorized",
+      message: "Missing Supabase access token"
+    });
+    return null;
+  }
+
+  try {
+    const user = await getSupabaseUser(supabaseAccessToken);
+    if (!user?.id) {
+      res.status(401).json({
+        error: "Unauthorized",
+        message: "Invalid Supabase user"
+      });
+      return null;
+    }
+    return user;
+  } catch (error) {
+    res.status(401).json({
+      error: "Unauthorized",
+      message: "Supabase auth failed"
+    });
+    return null;
+  }
+}
+
+async function tryGetSupabaseUser(req) {
+  const supabaseAccessToken = pickSupabaseAccessToken(req);
+  if (!supabaseAccessToken) return null;
+  try {
+    const user = await getSupabaseUser(supabaseAccessToken);
+    if (!user?.id) return null;
+    return user;
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function supabaseRequest(pathname, { method = "GET", body, headers = {} } = {}) {
@@ -319,12 +381,76 @@ async function fetchSheetDataBySpreadsheetId(tokens, targetSpreadsheetId, ranges
   };
 }
 
+async function getStoredGoogleTokens(userId) {
+  const rows = await supabaseRequest(
+    `/rest/v1/user_google_tokens?user_id=eq.${encodeURIComponent(userId)}&limit=1&select=refresh_token,scope`
+  );
+  const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+  return row || null;
+}
+
+async function upsertStoredGoogleTokens({
+  userId,
+  refreshToken,
+  scope
+}) {
+  const body = {
+    user_id: userId,
+    refresh_token: refreshToken,
+    scope: scope || null
+  };
+  await supabaseRequest("/rest/v1/user_google_tokens", {
+    method: "POST",
+    headers: {
+      Prefer: "resolution=merge-duplicates"
+    },
+    body
+  });
+}
+
+async function fetchSheetDataByUserId(userId, targetSpreadsheetId, ranges = DEFAULT_RANGES) {
+  const tokenRow = await getStoredGoogleTokens(userId);
+  if (!tokenRow?.refresh_token) {
+    const error = new Error("GoogleNotLinked");
+    error.code = "GoogleNotLinked";
+    throw error;
+  }
+  return fetchSheetDataBySpreadsheetId(
+    { refresh_token: tokenRow.refresh_token },
+    targetSpreadsheetId,
+    ranges
+  );
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of issuedApiTokens.entries()) {
     if (now > v.expiresAt) issuedApiTokens.delete(k);
   }
+  for (const [k, v] of pendingGoogleLinkStates.entries()) {
+    if (now > v.expiresAt) pendingGoogleLinkStates.delete(k);
+  }
 }, 1000 * 60 * 30).unref();
+
+app.post("/api/google/connect-url", async (req, res) => {
+  const user = await requireSupabaseUser(req, res);
+  if (!user) return;
+  const returnTo = normalizeReturnTo(req.body?.returnTo) || normalizeReturnTo(req.headers.origin) || null;
+  const stateId = issueGoogleLinkState({
+    userId: user.id,
+    returnTo
+  });
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: SCOPES,
+    state: stateId
+  });
+  return res.json({
+    ok: true,
+    authUrl
+  });
+});
 
 app.get("/auth/google", (req, res) => {
   const returnTo = normalizeReturnTo(req.query.returnTo);
@@ -345,9 +471,33 @@ app.get("/oauth2/callback", async (req, res) => {
 
   try {
     const { tokens } = await oauth2Client.getToken(code);
+    const stateText = typeof req.query.state === "string" ? req.query.state : "";
+    const linkedState = consumeGoogleLinkState(stateText);
+    if (linkedState?.userId) {
+      let refreshToken = tokens.refresh_token;
+      if (!refreshToken) {
+        const existing = await getStoredGoogleTokens(linkedState.userId);
+        refreshToken = existing?.refresh_token || "";
+      }
+      if (!refreshToken) {
+        return res.status(400).send("Google refresh token missing. Please re-authorize with consent.");
+      }
+      await upsertStoredGoogleTokens({
+        userId: linkedState.userId,
+        refreshToken,
+        scope: tokens.scope || null
+      });
+      if (linkedState.returnTo) {
+        const to = new URL(linkedState.returnTo);
+        to.searchParams.set("googleLinked", "1");
+        return res.redirect(to.toString());
+      }
+      return res.type("text/plain").send("Google linked successfully.");
+    }
+
     req.session.tokens = tokens;
     const apiToken = issueApiToken(tokens);
-    const state = decodeState(req.query.state);
+    const state = decodeState(stateText);
     const returnTo = normalizeReturnTo(state.returnTo);
     req.session.save(() => {
       if (returnTo) {
@@ -366,6 +516,34 @@ app.get("/oauth2/callback", async (req, res) => {
 });
 
 app.get("/api/portfolio", async (req, res) => {
+  const supabaseUser = await tryGetSupabaseUser(req);
+  if (supabaseUser?.id) {
+    try {
+      const rangesQuery = req.query.ranges;
+      let ranges = DEFAULT_RANGES;
+      if (typeof rangesQuery === "string" && rangesQuery.trim()) {
+        ranges = rangesQuery.split(",").map((r) => r.trim()).filter(Boolean);
+      }
+      const data = await fetchSheetDataByUserId(supabaseUser.id, spreadsheetId, ranges);
+      return res.json({
+        spreadsheetId: data.spreadsheetId,
+        ranges: data.ranges,
+        valueRanges: data.valueRanges
+      });
+    } catch (error) {
+      if (error?.code === "GoogleNotLinked") {
+        return res.status(401).json({
+          error: "GoogleNotLinked",
+          message: "Please connect Google Sheets access first"
+        });
+      }
+      return res.status(500).json({
+        error: "ReadFailed",
+        message: error.message
+      });
+    }
+  }
+
   const authToken = pickStToken(req);
   const tokenFromBearer = getTokensFromApiToken(authToken);
   const tokens = req.session.tokens || tokenFromBearer;
@@ -443,31 +621,11 @@ app.get("/api/portfolio-cached", async (req, res) => {
 });
 
 app.post("/api/sync", async (req, res) => {
-  const stToken = pickStToken(req);
-  const tokenFromBearer = getTokensFromApiToken(stToken);
-  const googleTokens = req.session.tokens || tokenFromBearer;
-  if (!googleTokens) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      message: "Please login first: /auth/google"
-    });
-  }
-
-  const supabaseAccessToken = pickSupabaseAccessToken(req);
-  if (!supabaseAccessToken) {
-    return res.status(401).json({
-      error: "Unauthorized",
-      message: "Missing Supabase access token"
-    });
-  }
-
   let syncLogId = "";
   try {
-    const user = await getSupabaseUser(supabaseAccessToken);
+    const user = await requireSupabaseUser(req, res);
+    if (!user) return;
     const userId = user?.id;
-    if (!userId) {
-      throw new Error("Invalid Supabase user");
-    }
 
     const sheetRows = await supabaseRequest(
       `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,sheet_url,spreadsheet_id`
@@ -494,8 +652,8 @@ app.post("/api/sync", async (req, res) => {
     });
     syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
 
-    const sheetData = await fetchSheetDataBySpreadsheetId(
-      googleTokens,
+    const sheetData = await fetchSheetDataByUserId(
+      userId,
       linkedSheet.spreadsheet_id,
       DEFAULT_RANGES
     );
@@ -552,6 +710,12 @@ app.post("/api/sync", async (req, res) => {
     });
   } catch (error) {
     console.error("Sync error:", error);
+    if (error?.code === "GoogleNotLinked") {
+      return res.status(401).json({
+        error: "GoogleNotLinked",
+        message: "Please connect Google Sheets access first"
+      });
+    }
     if (syncLogId) {
       try {
         await supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
