@@ -39,6 +39,57 @@
       margin: 2.4rem auto 3rem;
     }
 
+    .auth-card {
+      margin-bottom: 1rem;
+    }
+
+    .auth-row {
+      display: flex;
+      gap: 0.7rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .auth-user {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-right: 0.3rem;
+    }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 0.7rem;
+      padding: 0.45rem 0.7rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #f8f6f2;
+    }
+
+    .btn.primary {
+      border-color: #0a9396;
+      background: #0a9396;
+      color: #fff;
+    }
+
+    .btn.primary:hover {
+      background: #087f82;
+    }
+
+    .app-locked #sec-overview,
+    .app-locked #sec-kpis,
+    .app-locked #sec-holdings,
+    .app-locked #sec-distribution,
+    .app-locked #sec-history-trend,
+    .app-locked #sec-alloc,
+    .app-locked .footer {
+      display: none;
+    }
+
     .wrap > section + section {
       margin-top: 1rem;
     }
@@ -500,9 +551,19 @@
       }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <main class="wrap">
+  <main class="wrap app-locked" id="appMain">
+    <section id="sec-auth" class="card auth-card">
+      <div class="auth-row">
+        <strong>帳號</strong>
+        <span id="authUserText" class="auth-user">檢查登入中...</span>
+        <button id="btnLoginGoogle" class="btn primary" type="button">Google 登入</button>
+        <button id="btnLogout" class="btn" type="button" style="display:none;">登出</button>
+      </div>
+    </section>
+
     <section id="sec-overview" class="hero">
       <h1>ST投資分析總覽</h1>
       <div>
@@ -651,6 +712,9 @@
     const USE_LOCAL_BACKEND = location.hostname === "localhost";
     const AUTH_REDIRECT_TRIED_KEY = "stinvest_auth_redirect_tried";
     const API_TOKEN_STORAGE_KEY = "stinvest_api_token";
+    const SUPABASE_URL = "https://hdskcqidawcrassxbxio.supabase.co";
+    const SUPABASE_ANON_KEY = "REPLACE_WITH_SUPABASE_ANON_KEY";
+    const SUPABASE_LOGIN_ENABLED = SUPABASE_ANON_KEY !== "REPLACE_WITH_SUPABASE_ANON_KEY";
     const API_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/portfolio"
       : `${PROD_API_BASE}/api/portfolio`;
@@ -662,6 +726,10 @@
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
     const versionText = document.getElementById("versionText");
+    const appMain = document.getElementById("appMain");
+    const authUserText = document.getElementById("authUserText");
+    const btnLoginGoogle = document.getElementById("btnLoginGoogle");
+    const btnLogout = document.getElementById("btnLogout");
     const holdingsHead = document.getElementById("holdingsHead");
     const holdingsBody = document.getElementById("holdingsBody");
     const allocRows = document.getElementById("allocRows");
@@ -700,6 +768,10 @@
     let latestHistoryLatest = null;
     let latestHistorySnapshots = [];
     let visibleColumns = [];
+    let refreshTimer = null;
+    const supabaseClient = SUPABASE_LOGIN_ENABLED
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
 
     const HISTORY_METRIC_OPTIONS = [
       { key: "none", label: "無", axis: "none" },
@@ -1607,6 +1679,52 @@
       versionText.textContent = `版本：v${y}${m}${day}.${hh}${mm}（Auto）`;
     }
 
+    function setAppLocked(locked) {
+      appMain.classList.toggle("app-locked", locked);
+    }
+
+    async function loginWithGoogle() {
+      if (!supabaseClient) return;
+      await supabaseClient.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin + window.location.pathname
+        }
+      });
+    }
+
+    async function logoutSupabase() {
+      if (!supabaseClient) return;
+      await supabaseClient.auth.signOut();
+      localStorage.removeItem(API_TOKEN_STORAGE_KEY);
+      location.reload();
+    }
+
+    async function ensureSupabaseAuth() {
+      if (!SUPABASE_LOGIN_ENABLED) {
+        authUserText.textContent = "未設定 Supabase anon key（請先填入）";
+        btnLoginGoogle.style.display = "none";
+        btnLogout.style.display = "none";
+        setAppLocked(false);
+        return true;
+      }
+      const {
+        data: { session }
+      } = await supabaseClient.auth.getSession();
+      if (!session) {
+        authUserText.textContent = "未登入";
+        btnLoginGoogle.style.display = "inline-block";
+        btnLogout.style.display = "none";
+        setAppLocked(true);
+        return false;
+      }
+      authUserText.textContent = session.user?.email || "已登入";
+      btnLoginGoogle.style.display = "none";
+      btnLogout.style.display = "inline-block";
+      setAppLocked(false);
+      return true;
+    }
+
     function readApiTokenFromHash() {
       const raw = String(window.location.hash || "");
       if (!raw || !raw.startsWith("#")) return "";
@@ -1733,8 +1851,15 @@
     histToDate.addEventListener("change", () => renderHistoryTrendChart(latestHistoryDaily));
     sortByEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
-    loadData();
-    setInterval(loadData, REFRESH_MS);
+    btnLoginGoogle.addEventListener("click", loginWithGoogle);
+    btnLogout.addEventListener("click", logoutSupabase);
+
+    (async () => {
+      const ready = await ensureSupabaseAuth();
+      if (!ready) return;
+      await loadData();
+      refreshTimer = setInterval(loadData, REFRESH_MS);
+    })();
   </script>
 </body>
 </html>
