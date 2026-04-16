@@ -57,7 +57,7 @@
 
     .wrap {
       width: min(1200px, 94vw);
-      margin: 2.4rem auto 3rem;
+      margin: 1rem auto 3rem;
     }
 
     .auth-card {
@@ -65,20 +65,20 @@
     }
 
     .settings-fab {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      width: 28px;
-      height: 28px;
-      border: none;
+      position: static;
+      width: 26px;
+      height: 26px;
+      border: 0;
+      border-radius: 0;
       background: transparent;
       line-height: 1;
       cursor: pointer;
       padding: 0;
-      z-index: 2;
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      flex: 0 0 auto;
+      align-self: center;
     }
 
     .money-visibility-btn {
@@ -116,15 +116,15 @@
     }
 
     .settings-fab:hover {
-      opacity: 0.88;
+      opacity: 0.85;
     }
 
     .settings-icon-img {
-      width: 70%;
-      height: 70%;
+      width: 100%;
+      height: 100%;
       display: block;
       object-fit: contain;
-      filter: brightness(0) invert(1);
+      filter: none;
     }
 
     .settings-backdrop {
@@ -407,24 +407,65 @@
     }
 
     .hero {
-      background: linear-gradient(125deg, #004e64, #0a9396);
-      color: #f4fbfc;
+      --hero-logo-size: 34px;
+      --hero-brand-gap: 0.58rem;
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--line);
       border-radius: 1rem;
-      padding: 0.6rem 0.84rem;
+      padding: 0.66rem 0.78rem;
       box-shadow: var(--card-shadow);
       animation: enter 0.5s ease-out;
-      position: relative;
     }
 
-    .hero h1 {
+    .hero-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.55rem;
+    }
+
+    .hero-main {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .hero-brand {
+      display: grid;
+      grid-template-columns: var(--hero-logo-size) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--hero-brand-gap);
+      min-width: 0;
+    }
+
+    .hero-text {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hero-logo {
+      width: var(--hero-logo-size);
+      height: var(--hero-logo-size);
+      border-radius: 9px;
+      object-fit: cover;
+      flex: 0 0 auto;
+      border: 0;
+      background: #fff;
+    }
+
+    .hero-title {
       margin: 0;
-      font-size: clamp(0.82rem, 1.54vw, 1.12rem);
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: #223248;
+      letter-spacing: 0.01em;
     }
 
     .hero-updated {
-      margin-top: 0.22rem;
-      font-size: 0.68rem;
-      color: #d5dde8;
+      margin-top: 0.08rem;
+      font-size: 0.66rem;
+      color: #768496;
       font-weight: 600;
       letter-spacing: 0.01em;
       display: inline-flex;
@@ -435,8 +476,8 @@
     .refresh-spinner {
       width: 12px;
       height: 12px;
-      border: 2px solid rgba(213, 221, 232, 0.35);
-      border-top-color: #d5dde8;
+      border: 2px solid rgba(118, 132, 150, 0.24);
+      border-top-color: #6f8093;
       border-radius: 50%;
       display: inline-block;
       opacity: 0;
@@ -499,12 +540,17 @@
     }
 
     .kpi-delta {
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
       margin-top: 0.35rem;
-      font-size: 0.82rem;
+      font-size: clamp(0.72rem, 2.3vw, 0.82rem);
       font-weight: 700;
       font-style: normal;
       color: #667085;
+      white-space: nowrap;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
     }
 
     .kpi-delta.up {
@@ -882,6 +928,7 @@
     @media (max-width: 640px) {
       .wrap {
         width: 95vw;
+        margin: 0.7rem auto 2rem;
       }
 
       .wrap > section + section {
@@ -892,8 +939,23 @@
         grid-template-columns: repeat(2, minmax(120px, 1fr));
       }
 
+      .kpi-delta {
+        font-size: 0.72rem;
+      }
+
       .hero {
+        --hero-logo-size: 32px;
+        --hero-brand-gap: 0.52rem;
         padding: 0.6rem 0.84rem;
+      }
+
+      .hero-updated {
+        margin-top: 0.06rem;
+      }
+
+      .settings-fab {
+        width: 24px;
+        height: 24px;
       }
 
       .section-head {
@@ -975,11 +1037,20 @@
     </section>
 
     <section id="sec-overview" class="hero">
-      <button id="btnOpenSettings" class="settings-fab" type="button" aria-label="設定" title="設定">
-        <img class="settings-icon-img" src="./settings-icon.png" alt="" />
-      </button>
-      <h1>總覽</h1>
-      <div class="hero-updated">上次更新：<span id="updatedAt">--</span><span id="refreshSpinner" class="refresh-spinner" aria-hidden="true"></span></div>
+      <div class="hero-head">
+        <div class="hero-main">
+          <div class="hero-brand">
+            <img class="hero-logo" src="./stinvest_logo3.png" alt="" />
+            <div class="hero-text">
+              <h1 class="hero-title">ST投資總覽</h1>
+              <div class="hero-updated">上次更新：<span id="updatedAt">--</span><span id="refreshSpinner" class="refresh-spinner" aria-hidden="true"></span></div>
+            </div>
+          </div>
+        </div>
+        <button id="btnOpenSettings" class="settings-fab" type="button" aria-label="設定" title="設定">
+          <img class="settings-icon-img" src="./settings-icon.png" alt="" />
+        </button>
+      </div>
       <span id="statusText" class="sr-only">待載入</span>
     </section>
 
@@ -2128,11 +2199,17 @@
       }
     }
 
-    function triggerImmediateRefresh() {
+    async function triggerImmediateRefresh({ force = false, withSync = true } = {}) {
       const now = Date.now();
-      if (now - lastRefreshTriggeredAt < 5000) return;
+      if (!force && now - lastRefreshTriggeredAt < 5000) return;
       lastRefreshTriggeredAt = now;
-      loadData();
+
+      // UX first: show cached data immediately, then sync in background.
+      await loadData();
+
+      if (withSync && currentUserId && currentLinkedSheetRowId) {
+        syncNow({ fromAuto: true });
+      }
     }
 
     function parseRows(data) {
@@ -2493,10 +2570,13 @@
           }
           throw new Error(parsed?.message || text);
         }
-        await res.json();
+        const syncPayload = await res.json();
         await loadData();
         await loadLinkedSheet(currentUserId);
-        setSyncStatus(`${fromAuto ? "自動" : ""}完成（${new Date().toLocaleString("zh-TW")}）`);
+        const doneAt = syncPayload?.finishedAt
+          ? new Date(syncPayload.finishedAt).toLocaleString("zh-TW")
+          : new Date().toLocaleString("zh-TW");
+        setSyncStatus(`${fromAuto ? "自動" : ""}完成（${doneAt}）`);
       } catch (err) {
         if (!fromAuto) {
           setSyncStatus(`失敗（${err.message || err}）`, true);
@@ -2599,6 +2679,7 @@
       try {
         let data = null;
         let loadedFromCache = false;
+        let effectiveSyncedAt = "";
         let sbAccessToken = "";
 
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
@@ -2614,6 +2695,7 @@
               const cacheJson = await cacheRes.json();
               data = cacheJson.data || null;
               loadedFromCache = !!data;
+              effectiveSyncedAt = cacheJson.cachedAt || "";
             }
           }
         }
@@ -2697,7 +2779,9 @@
         renderHistoryTrendChart(history.daily);
         renderHoldings(holdings, groupSummaries);
         statusText.textContent = loadedFromCache ? "已更新（快取）" : "已更新";
-        updatedAt.textContent = new Date().toLocaleString("zh-TW");
+        updatedAt.textContent = effectiveSyncedAt
+          ? new Date(effectiveSyncedAt).toLocaleString("zh-TW")
+          : "--";
       } catch (err) {
         console.error(err);
         if (String(err?.message || "").includes("Unauthorized after login redirect")) {
@@ -2804,7 +2888,7 @@
       setSyncMode("manual", { persist: false });
       const ready = await ensureSupabaseAuth();
       if (!ready) return;
-      await loadData();
+      await triggerImmediateRefresh({ force: true, withSync: true });
       refreshTimer = setInterval(loadData, REFRESH_MS);
     })();
   </script>
