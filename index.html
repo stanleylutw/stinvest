@@ -9,22 +9,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0f8f9b" />
 
-  <link rel="icon" type="image/png" sizes="32x32" href="./stinvest_logo1.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="./stinvest_logo1.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./stinvest_logo1.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./stinvest_logo3.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./stinvest_logo3.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./stinvest_logo3.png" />
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="ST投資總表" />
   <meta property="og:title" content="ST投資總表" />
   <meta property="og:description" content="ST投資總表" />
   <meta property="og:url" content="https://stanleylutw.github.io/stinvest/" />
-  <meta property="og:image" content="https://stanleylutw.github.io/stinvest/stinvest_logo1.png" />
+  <meta property="og:image" content="https://stanleylutw.github.io/stinvest/stinvest_logo3.png" />
   <meta property="og:image:alt" content="ST投資總表" />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="ST投資總表" />
   <meta name="twitter:description" content="ST投資總表" />
-  <meta name="twitter:image" content="https://stanleylutw.github.io/stinvest/stinvest_logo1.png" />
+  <meta name="twitter:image" content="https://stanleylutw.github.io/stinvest/stinvest_logo3.png" />
   <style>
     :root {
       --bg: #f4f6ef;
@@ -410,7 +410,7 @@
       background: linear-gradient(125deg, #004e64, #0a9396);
       color: #f4fbfc;
       border-radius: 1rem;
-      padding: 0.85rem 1.2rem;
+      padding: 0.6rem 0.84rem;
       box-shadow: var(--card-shadow);
       animation: enter 0.5s ease-out;
       position: relative;
@@ -418,15 +418,40 @@
 
     .hero h1 {
       margin: 0;
-      font-size: clamp(1.15rem, 2.2vw, 1.6rem);
+      font-size: clamp(0.82rem, 1.54vw, 1.12rem);
     }
 
     .hero-updated {
-      margin-top: 0.32rem;
-      font-size: 0.8rem;
+      margin-top: 0.22rem;
+      font-size: 0.68rem;
       color: #d5dde8;
       font-weight: 600;
       letter-spacing: 0.01em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .refresh-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(213, 221, 232, 0.35);
+      border-top-color: #d5dde8;
+      border-radius: 50%;
+      display: inline-block;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      animation: spin 0.7s linear infinite;
+    }
+
+    .refresh-spinner.active {
+      opacity: 1;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .sr-only {
@@ -868,7 +893,7 @@
       }
 
       .hero {
-        padding: 1.2rem;
+        padding: 0.6rem 0.84rem;
       }
 
       .section-head {
@@ -954,7 +979,7 @@
         <img class="settings-icon-img" src="./settings-icon.png" alt="" />
       </button>
       <h1>總覽</h1>
-      <div class="hero-updated">上次更新：<span id="updatedAt">--</span></div>
+      <div class="hero-updated">上次更新：<span id="updatedAt">--</span><span id="refreshSpinner" class="refresh-spinner" aria-hidden="true"></span></div>
       <span id="statusText" class="sr-only">待載入</span>
     </section>
 
@@ -976,7 +1001,7 @@
             <em class="kpi-delta" id="kpiDeltaMarketValue">■ --</em>
           </article>
           <article class="kpi"><small>持有成本</small><b id="kpiCost">--</b></article>
-          <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b></article>
+          <article class="kpi"><small>未含息損益</small><b id="kpiProfit">--</b><em class="kpi-delta" id="kpiDeltaProfit">■ --</em></article>
           <article class="kpi"><small>累積配息</small><b id="kpiDividend">--</b></article>
           <article class="kpi"><small>含息損益</small><b id="kpiProfitWithDividend">--</b></article>
           <article class="kpi"><small>預估月配額</small><b id="kpiMonthlyIncome">--</b></article>
@@ -1094,7 +1119,7 @@
     </section>
 
     <div class="footer">
-      <span>頁面目標：先做 MVP 的總覽 + 明細 + 配息，後續再串接自動匯入</span>
+      <span>© 2026 Stanley All rights reserved.</span>
       <span id="versionText">版本：--</span>
     </div>
   </main>
@@ -1128,6 +1153,7 @@
 
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
+    const refreshSpinner = document.getElementById("refreshSpinner");
     const versionText = document.getElementById("versionText");
     const appMain = document.getElementById("appMain");
     const secAuth = document.getElementById("sec-auth");
@@ -1171,7 +1197,8 @@
     };
 
     const kpiDeltaEls = {
-      marketValue: document.getElementById("kpiDeltaMarketValue")
+      marketValue: document.getElementById("kpiDeltaMarketValue"),
+      profit: document.getElementById("kpiDeltaProfit")
     };
 
     const barClasses = ["c1", "c2", "c3", "c4", "c5"];
@@ -1190,6 +1217,7 @@
     let isSyncInProgress = false;
     let syncMode = "manual";
     let moneyMasked = false;
+    let lastRefreshTriggeredAt = 0;
     let currentUserId = "";
     let currentLinkedSheetRowId = "";
     const supabaseClient = SUPABASE_LOGIN_ENABLED
@@ -2032,6 +2060,28 @@
       return `${n >= 0 ? "+" : "-"}${txt}`;
     }
 
+    function setRefreshingUI(isRefreshing) {
+      if (!refreshSpinner) return;
+      refreshSpinner.classList.toggle("active", !!isRefreshing);
+    }
+
+    function formatCompareTimestamp(timestampText, reportDateText) {
+      const ts = String(timestampText || "").trim();
+      if (!ts || ts === "--") return "--";
+      const reportDate = normalizeReportDate(reportDateText);
+      const m = ts.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}:\d{2}:\d{2}))?/);
+      if (!m) return ts;
+      const yyyy = m[1];
+      const mm = m[2].padStart(2, "0");
+      const dd = m[3].padStart(2, "0");
+      const hhmmss = m[4] || "";
+      const normalizedDate = `${yyyy}/${mm}/${dd}`;
+      if (reportDate && normalizedDate === reportDate && hhmmss) {
+        return hhmmss;
+      }
+      return `${normalizedDate}${hhmmss ? ` ${hhmmss}` : ""}`;
+    }
+
     function setKpiDelta(el, current, prev) {
       if (!el || !Number.isFinite(current) || !Number.isFinite(prev)) {
         if (el) {
@@ -2055,24 +2105,34 @@
 
     function renderKpiDeltas(summary, history) {
       const current = {
-        marketValue: toNumber(summary?.[idx.marketValue])
+        marketValue: toNumber(summary?.[idx.marketValue]),
+        profit: toNumber(summary?.[idx.profit])
       };
       const prevSnapshot = findBaselineSnapshot(history, current.marketValue);
       const previous = {
-        marketValue: snapshotMetricValue(prevSnapshot, "現值")
+        marketValue: snapshotMetricValue(prevSnapshot, "現值"),
+        profit: snapshotMetricValue(prevSnapshot, "淨損益")
       };
 
       setKpiDelta(kpiDeltaEls.marketValue, current.marketValue, previous.marketValue);
+      setKpiDelta(kpiDeltaEls.profit, current.profit, previous.profit);
 
       if (prevSnapshot) {
         const mvRawText = prevSnapshot.metrics?.["現值"]?.text || "--";
         const mvText = moneyMasked ? MONEY_MASK_TEXT : mvRawText;
-        const tsText = prevSnapshot.timestamp || "--";
+        const tsText = formatCompareTimestamp(prevSnapshot.timestamp || "--", prevSnapshot.reportDate || "");
         const dText = prevSnapshot.reportDate || "--";
-        kpiCompareInfo.textContent = `比較基準：${dText} ${tsText}（總市值 ${mvText}）`;
+        kpiCompareInfo.textContent = `比較基準：${dText}${tsText !== "--" ? ` ${tsText}` : ""}（總市值 ${mvText}）`;
       } else {
         kpiCompareInfo.textContent = `比較基準：未找到（history daily=${history?.daily?.length || 0}, snapshots=${history?.snapshots?.length || 0}）`;
       }
+    }
+
+    function triggerImmediateRefresh() {
+      const now = Date.now();
+      if (now - lastRefreshTriggeredAt < 5000) return;
+      lastRefreshTriggeredAt = now;
+      loadData();
     }
 
     function parseRows(data) {
@@ -2533,7 +2593,9 @@
     }
 
     async function loadData() {
+      lastRefreshTriggeredAt = Date.now();
       statusText.textContent = "更新中...";
+      setRefreshingUI(true);
       try {
         let data = null;
         let loadedFromCache = false;
@@ -2643,6 +2705,8 @@
         } else {
           statusText.textContent = "更新失敗";
         }
+      } finally {
+        setRefreshingUI(false);
       }
     }
 
@@ -2720,6 +2784,12 @@
     settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") setSettingsOpen(false);
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) triggerImmediateRefresh();
+    });
+    window.addEventListener("focus", () => {
+      triggerImmediateRefresh();
     });
     sheetUrlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
