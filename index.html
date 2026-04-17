@@ -53,6 +53,12 @@
         radial-gradient(1100px 600px at -10% -20%, #f6e7d8 0%, transparent 60%),
         radial-gradient(900px 450px at 100% 0%, #d9eef0 0%, transparent 55%),
         var(--bg);
+      background-repeat: no-repeat, no-repeat, no-repeat;
+    }
+
+    body.login-mode {
+      background-color: var(--bg) !important;
+      background-image: none !important;
     }
 
     .wrap {
@@ -177,6 +183,7 @@
         radial-gradient(1100px 600px at -10% -20%, #f6e7d8 0%, transparent 60%),
         radial-gradient(900px 450px at 100% 0%, #d9eef0 0%, transparent 55%),
         var(--bg);
+      background-repeat: no-repeat, no-repeat, no-repeat;
     }
 
     .settings-wrap {
@@ -288,6 +295,12 @@
       align-items: center;
     }
 
+    .auth-sheet-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+    }
+
     .auth-sheet-row input {
       width: 100%;
       border: 1px solid #d8dee8;
@@ -392,14 +405,131 @@
       justify-content: center;
     }
 
+    .btn.subtle {
+      background: #fff;
+      border-color: #dbe3ee;
+      color: #475569;
+    }
+
+    .btn.subtle:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .app-locked #sec-overview,
     .app-locked #sec-kpis,
     .app-locked #sec-holdings,
     .app-locked #sec-distribution,
     .app-locked #sec-history-trend,
-    .app-locked #sec-alloc,
-    .app-locked .footer {
+    .app-locked #sec-alloc {
       display: none;
+    }
+
+    .login-view {
+      display: none;
+    }
+
+    .app-locked #sec-auth {
+      position: static;
+      transform: none;
+      width: auto;
+      height: auto;
+      box-shadow: none;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      margin: 0;
+      overflow: visible;
+      background: transparent;
+      background-image: none;
+    }
+
+    .app-locked #sec-auth .settings-wrap {
+      display: none;
+    }
+
+    .app-locked #sec-auth .login-view {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      box-shadow: var(--card-shadow);
+      padding: 0.8rem 0.86rem;
+    }
+
+    .login-brand {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 0.65rem;
+      align-items: center;
+    }
+
+    .login-brand-logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .login-brand-title {
+      margin: 0;
+      color: #223248;
+      font-size: 1.08rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .login-brand-subtitle {
+      margin: 0.16rem 0 0;
+      color: #7a8797;
+      font-size: 0.75rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .login-title {
+      margin: 0 0 0.3rem;
+      color: #223248;
+      font-size: 1.02rem;
+      font-weight: 800;
+    }
+
+    .login-hint {
+      margin: 0;
+      color: #7a8797;
+      font-size: 0.84rem;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .google-login-btn {
+      margin-top: 0.55rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: 1px solid #cfdbe8;
+      background: #fff;
+      color: #334155;
+      border-radius: 0.75rem;
+      padding: 0.5rem 0.9rem;
+      font-size: 0.9rem;
+      font-weight: 800;
+      cursor: pointer;
+      min-height: 42px;
+    }
+
+    .google-login-btn:hover {
+      background: #f8fafc;
+    }
+
+    .google-login-mark {
+      font-size: 1rem;
+      line-height: 1;
     }
 
     .wrap > section + section {
@@ -407,13 +537,13 @@
     }
 
     .hero {
-      --hero-logo-size: 34px;
+      --hero-logo-size: 41px;
       --hero-brand-gap: 0.58rem;
       background: var(--surface);
       color: var(--ink);
       border: 1px solid var(--line);
       border-radius: 1rem;
-      padding: 0.66rem 0.78rem;
+      padding: 0.73rem 0.86rem;
       box-shadow: var(--card-shadow);
       animation: enter 0.5s ease-out;
     }
@@ -658,8 +788,15 @@
       margin-top: 1.25rem;
       display: flex;
       justify-content: space-between;
+      align-items: center;
+      gap: 0.8rem;
+      flex-wrap: nowrap;
       color: var(--muted);
-      font-size: 0.84rem;
+      font-size: 0.8rem;
+    }
+
+    .footer span {
+      white-space: nowrap;
     }
 
     .empty-row td {
@@ -944,9 +1081,9 @@
       }
 
       .hero {
-        --hero-logo-size: 32px;
+        --hero-logo-size: 38px;
         --hero-brand-gap: 0.52rem;
-        padding: 0.6rem 0.84rem;
+        padding: 0.66rem 0.92rem;
       }
 
       .hero-updated {
@@ -984,6 +1121,28 @@
         grid-template-columns: 1fr;
         gap: 0.4rem;
       }
+
+      .auth-sheet-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .login-card {
+        padding: 0.72rem 0.78rem;
+      }
+
+      .login-brand {
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 0.58rem;
+      }
+
+      .login-brand-logo {
+        width: 40px;
+        height: 40px;
+      }
+
+      .footer {
+        font-size: 0.72rem;
+      }
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -992,6 +1151,24 @@
   <div id="settingsBackdrop" class="settings-backdrop" aria-hidden="true"></div>
   <main class="wrap app-locked" id="appMain">
     <section id="sec-auth" class="card auth-card settings-panel" aria-hidden="true">
+      <div class="login-view">
+        <div class="login-card">
+          <div class="login-brand">
+            <img class="login-brand-logo" src="./stinvest_logo3.png" alt="" />
+            <div>
+              <h2 class="login-brand-title">ST投資總覽</h2>
+            </div>
+          </div>
+        </div>
+        <div class="login-card">
+          <h3 class="login-title">登入</h3>
+          <p class="login-hint">先登入才能開始使用投資總覽與同步功能。</p>
+          <button id="btnLoginGoogleCard" class="google-login-btn" type="button">
+            <span class="google-login-mark">G</span>
+            <span>使用 Google 登入</span>
+          </button>
+        </div>
+      </div>
       <div class="settings-wrap">
         <div class="settings-head">
           <button id="btnBackSettings" class="settings-back-btn" type="button" aria-label="返回">←</button>
@@ -1013,7 +1190,10 @@
             <label class="field-label" for="sheetUrlInput">Google Sheet 網址 / Spreadsheet ID</label>
             <div class="auth-sheet-row">
               <input id="sheetUrlInput" type="text" placeholder="貼上 Google Sheet 網址（或 spreadsheetId）" />
-              <button id="btnSaveSheetLink" class="btn full" type="button">綁定 Sheet</button>
+              <div class="auth-sheet-actions">
+                <button id="btnSaveSheetLink" class="btn full" type="button">綁定 Sheet</button>
+                <button id="btnUnbindSheet" class="btn full subtle" type="button" disabled>解除綁定</button>
+              </div>
             </div>
             <div id="sheetBindStatus" class="auth-sheet-status">尚未綁定 Google Sheet</div>
           </div>
@@ -1212,6 +1392,9 @@
     const SYNC_API_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/sync"
       : `${PROD_API_BASE}/api/sync`;
+    const UNBIND_API_URL = USE_LOCAL_BACKEND
+      ? "http://localhost:3000/api/unbind"
+      : `${PROD_API_BASE}/api/unbind`;
     const GOOGLE_CONNECT_URL = USE_LOCAL_BACKEND
       ? "http://localhost:3000/api/google/connect-url"
       : `${PROD_API_BASE}/api/google/connect-url`;
@@ -1234,9 +1417,11 @@
     const settingsBackdrop = document.getElementById("settingsBackdrop");
     const authUserText = document.getElementById("authUserText");
     const btnLoginGoogle = document.getElementById("btnLoginGoogle");
+    const btnLoginGoogleCard = document.getElementById("btnLoginGoogleCard");
     const btnLogout = document.getElementById("btnLogout");
     const sheetUrlInput = document.getElementById("sheetUrlInput");
     const btnSaveSheetLink = document.getElementById("btnSaveSheetLink");
+    const btnUnbindSheet = document.getElementById("btnUnbindSheet");
     const sheetBindStatus = document.getElementById("sheetBindStatus");
     const syncModeSelect = document.getElementById("syncModeSelect");
     const syncModeHint = document.getElementById("syncModeHint");
@@ -2258,7 +2443,7 @@
       const raw = document.lastModified;
       const d = raw ? new Date(raw) : new Date();
       if (Number.isNaN(d.getTime())) {
-        versionText.textContent = "版本：unknown";
+        versionText.textContent = "unknown";
         return;
       }
       const y = d.getFullYear();
@@ -2266,17 +2451,20 @@
       const day = String(d.getDate()).padStart(2, "0");
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
-      versionText.textContent = `版本：v${y}${m}${day}.${hh}${mm}（Auto）`;
+      versionText.textContent = `v${y}${m}${day}.${hh}${mm}`;
     }
 
     function setAppLocked(locked) {
       appMain.classList.toggle("app-locked", locked);
+      document.body.classList.toggle("login-mode", locked);
     }
 
     function setSettingsOpen(open) {
-      document.body.classList.toggle("settings-open", open);
-      secAuth.setAttribute("aria-hidden", open ? "false" : "true");
-      settingsBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
+      const locked = appMain.classList.contains("app-locked");
+      const actualOpen = locked ? false : open;
+      document.body.classList.toggle("settings-open", actualOpen);
+      secAuth.setAttribute("aria-hidden", actualOpen || locked ? "false" : "true");
+      settingsBackdrop.setAttribute("aria-hidden", actualOpen ? "false" : "true");
     }
 
     function setSheetBindStatus(message, isError = false) {
@@ -2415,6 +2603,36 @@
       }
     }
 
+    function clearDashboardForUnlinkedSheet() {
+      latestSummary = null;
+      latestHoldings = [];
+      latestGroupSummaries = new Map();
+      latestDistItems = [];
+      latestDistDeltaInfo = null;
+      latestHistoryRows = [];
+      latestHistoryDaily = [];
+      latestHistoryLatest = null;
+      latestHistorySnapshots = [];
+
+      Object.values(kpiEls).forEach((el) => {
+        if (!el) return;
+        el.textContent = "--";
+        el.className = "";
+      });
+      Object.values(kpiDeltaEls).forEach((el) => {
+        if (!el) return;
+        el.textContent = "■ --";
+        el.className = "kpi-delta flat";
+      });
+      if (kpiCompareInfo) kpiCompareInfo.textContent = "比較基準：--";
+      if (updatedAt) updatedAt.textContent = "--";
+
+      renderAlloc([], []);
+      renderDistribution([], null);
+      renderHistoryTrendChart([]);
+      renderHoldings([], new Map());
+    }
+
     async function setMoneyMasked(nextValue, { persistCloud = true } = {}) {
       moneyMasked = !!nextValue;
       applyMoneyMaskUI();
@@ -2469,14 +2687,18 @@
       if (!row) {
         currentLinkedSheetRowId = "";
         btnSyncNow.disabled = true;
+        btnUnbindSheet.disabled = true;
         sheetUrlInput.value = "";
         setSheetBindStatus("尚未綁定 Google Sheet");
         setSyncStatus("待命");
+        clearDashboardForUnlinkedSheet();
+        statusText.textContent = "請先綁定 Google Sheet";
         configureAutoSync();
         return;
       }
       currentLinkedSheetRowId = row.id || "";
       btnSyncNow.disabled = false;
+      btnUnbindSheet.disabled = false;
       sheetUrlInput.value = row.sheet_url || row.spreadsheet_id || "";
       const synced = row.last_synced_at
         ? `，上次同步：${new Date(row.last_synced_at).toLocaleString("zh-TW")}`
@@ -2484,6 +2706,62 @@
       setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
       setSyncStatus(row.last_synced_at ? `已同步（${new Date(row.last_synced_at).toLocaleString("zh-TW")}）` : "待命");
       configureAutoSync();
+    }
+
+    async function unbindLinkedSheet() {
+      if (!supabaseClient || !currentUserId) {
+        setSheetBindStatus("請先登入", true);
+        return;
+      }
+      if (!currentLinkedSheetRowId) {
+        setSheetBindStatus("目前沒有可解除的綁定");
+        return;
+      }
+
+      btnUnbindSheet.disabled = true;
+      btnSaveSheetLink.disabled = true;
+      btnSyncNow.disabled = true;
+      setSheetBindStatus("解除綁定中（1/2：清除快取資料）...");
+      setSyncStatus("解除綁定中...");
+      try {
+        const sbAccessToken = await getSupabaseAccessToken();
+        if (!sbAccessToken) {
+          throw new Error("請先重新登入");
+        }
+        const res = await fetch(UNBIND_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sbAccessToken}`
+          },
+          body: JSON.stringify({})
+        });
+        if (!res.ok) {
+          const raw = await res.text();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (_err) {
+            parsed = null;
+          }
+          throw new Error(parsed?.message || raw || "解除綁定失敗");
+        }
+
+        currentLinkedSheetRowId = "";
+        sheetUrlInput.value = "";
+        clearDashboardForUnlinkedSheet();
+        statusText.textContent = "請先綁定 Google Sheet";
+        setSheetBindStatus("尚未綁定 Google Sheet");
+        setSyncStatus("待命（已清除快取）");
+        configureAutoSync();
+      } catch (err) {
+        setSheetBindStatus(`解除綁定失敗：${err.message || err}`, true);
+        setSyncStatus("解除綁定失敗", true);
+      } finally {
+        btnSaveSheetLink.disabled = false;
+        btnUnbindSheet.disabled = !currentLinkedSheetRowId;
+        btnSyncNow.disabled = !currentLinkedSheetRowId;
+      }
     }
 
     async function saveLinkedSheet() {
@@ -2497,9 +2775,13 @@
         setSheetBindStatus("格式錯誤：請貼 Google Sheet 網址或 spreadsheetId", true);
         return;
       }
-      setSheetBindStatus("綁定中...");
+      setSheetBindStatus("初始化中（1/4：驗證 Google Sheet 網址）...");
+      setSyncStatus("初始化中...");
       btnSaveSheetLink.disabled = true;
+      btnUnbindSheet.disabled = true;
+      btnSyncNow.disabled = true;
       try {
+        setSheetBindStatus("初始化中（2/4：更新綁定設定）...");
         const { error: clearError } = await supabaseClient
           .from("user_sheets")
           .update({ is_active: false })
@@ -2507,6 +2789,7 @@
           .eq("is_active", true);
         if (clearError) throw clearError;
 
+        setSheetBindStatus("初始化中（3/4：寫入綁定資料）...");
         const { error: upsertError } = await supabaseClient
           .from("user_sheets")
           .upsert(
@@ -2521,16 +2804,23 @@
             }
           );
         if (upsertError) throw upsertError;
+        setSheetBindStatus("初始化中（4/4：首次同步資料，請稍候）...");
+        setSyncStatus("初始化同步中...");
         await loadLinkedSheet(currentUserId);
-        setSheetBindStatus(`已綁定：${spreadsheetId}`);
+        await syncNow({ fromAuto: false, throwOnError: true });
+        await loadLinkedSheet(currentUserId);
+        setSheetBindStatus(`已綁定：${spreadsheetId}（初始化完成）`);
       } catch (err) {
         setSheetBindStatus(`綁定失敗：${err.message || err}`, true);
+        setSyncStatus("初始化失敗", true);
       } finally {
         btnSaveSheetLink.disabled = false;
+        btnUnbindSheet.disabled = !currentLinkedSheetRowId;
+        btnSyncNow.disabled = !currentLinkedSheetRowId;
       }
     }
 
-    async function syncNow({ fromAuto = false } = {}) {
+    async function syncNow({ fromAuto = false, throwOnError = false } = {}) {
       if (!currentUserId || !currentLinkedSheetRowId) {
         if (!fromAuto) setSyncStatus("請先綁定 Sheet", true);
         return;
@@ -2566,6 +2856,9 @@
           if (!fromAuto && parsed?.error === "GoogleNotLinked") {
             setSyncStatus("尚未連接 Google Sheet 存取，導向授權中...");
             await redirectToGoogleSheetsLink();
+            if (throwOnError) {
+              throw new Error("GoogleNotLinked");
+            }
             return;
           }
           throw new Error(parsed?.message || text);
@@ -2582,6 +2875,9 @@
           setSyncStatus(`失敗（${err.message || err}）`, true);
         } else {
           setSyncStatus("自動同步失敗（稍後重試）", true);
+        }
+        if (throwOnError) {
+          throw err;
         }
       } finally {
         isSyncInProgress = false;
@@ -2612,12 +2908,13 @@
         btnLoginGoogle.style.display = "none";
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
+        btnUnbindSheet.disabled = true;
         btnSyncNow.disabled = true;
         syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
         setSyncMode("manual", { persist: false });
         setAppLocked(false);
-        setSettingsOpen(true);
+        setSettingsOpen(false);
         return true;
       }
       const {
@@ -2630,6 +2927,7 @@
         btnLoginGoogle.style.display = "inline-block";
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
+        btnUnbindSheet.disabled = true;
         btnSyncNow.disabled = true;
         syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
@@ -2637,7 +2935,7 @@
         setSyncStatus("待命");
         setSyncMode("manual", { persist: false });
         setAppLocked(true);
-        setSettingsOpen(true);
+        setSettingsOpen(false);
         return false;
       }
       currentUserId = session.user?.id || "";
@@ -2645,6 +2943,7 @@
       btnLoginGoogle.style.display = "none";
       btnLogout.style.display = "inline-block";
       btnSaveSheetLink.disabled = false;
+      btnUnbindSheet.disabled = true;
       syncModeSelect.disabled = false;
       sheetUrlInput.disabled = false;
       await loadLinkedSheet(currentUserId);
@@ -2784,7 +3083,16 @@
           : "--";
       } catch (err) {
         console.error(err);
-        if (String(err?.message || "").includes("Unauthorized after login redirect")) {
+        const messageText = String(err?.message || "");
+        if (
+          messageText.includes("Please bind Google Sheet URL first")
+          || messageText.includes("NoLinkedSheet")
+          || messageText.includes("Please connect Google Sheets access first")
+          || messageText.includes("GoogleNotLinked")
+        ) {
+          clearDashboardForUnlinkedSheet();
+          statusText.textContent = "請先綁定 Google Sheet";
+        } else if (messageText.includes("Unauthorized after login redirect")) {
           statusText.textContent = "更新失敗（授權逾時，請重新整理重試）";
         } else {
           statusText.textContent = "更新失敗";
@@ -2848,8 +3156,10 @@
     sortByEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     sortDirEl.addEventListener("change", () => renderHoldings(latestHoldings, latestGroupSummaries));
     btnLoginGoogle.addEventListener("click", loginWithGoogle);
+    btnLoginGoogleCard.addEventListener("click", loginWithGoogle);
     btnLogout.addEventListener("click", logoutSupabase);
     btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
+    btnUnbindSheet.addEventListener("click", unbindLinkedSheet);
     btnSyncNow.addEventListener("click", syncNow);
     syncModeSelect.addEventListener("change", () => {
       setSyncMode(syncModeSelect.value, { persist: true });

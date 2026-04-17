@@ -524,7 +524,23 @@ app.get("/api/portfolio", async (req, res) => {
       if (typeof rangesQuery === "string" && rangesQuery.trim()) {
         ranges = rangesQuery.split(",").map((r) => r.trim()).filter(Boolean);
       }
-      const data = await fetchSheetDataByUserId(supabaseUser.id, spreadsheetId, ranges);
+
+      const linkedRows = await supabaseRequest(
+        `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(supabaseUser.id)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
+      );
+      const linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+      if (!linkedSheet?.spreadsheet_id) {
+        return res.status(400).json({
+          error: "NoLinkedSheet",
+          message: "Please bind Google Sheet URL first"
+        });
+      }
+
+      const data = await fetchSheetDataByUserId(
+        supabaseUser.id,
+        linkedSheet.spreadsheet_id,
+        ranges
+      );
       return res.json({
         spreadsheetId: data.spreadsheetId,
         ranges: data.ranges,
@@ -592,8 +608,19 @@ app.get("/api/portfolio-cached", async (req, res) => {
     const userId = user?.id;
     if (!userId) throw new Error("Invalid Supabase user");
 
+    const linkedRows = await supabaseRequest(
+      `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
+    );
+    const linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+    if (!linkedSheet?.spreadsheet_id) {
+      return res.status(400).json({
+        error: "NoLinkedSheet",
+        message: "Please bind Google Sheet URL first"
+      });
+    }
+
     const logs = await supabaseRequest(
-      `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=id,finished_at,row_count,spreadsheet_id,payload_json`
+      `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=id,finished_at,row_count,spreadsheet_id,payload_json`
     );
     const latest = Array.isArray(logs) && logs.length ? logs[0] : null;
     if (!latest?.payload_json) {
@@ -733,6 +760,53 @@ app.post("/api/sync", async (req, res) => {
 
     return res.status(500).json({
       error: "SyncFailed",
+      message: error.message
+    });
+  }
+});
+
+app.post("/api/unbind", async (req, res) => {
+  try {
+    const user = await requireSupabaseUser(req, res);
+    if (!user) return;
+    const userId = user?.id;
+
+    const sheetRows = await supabaseRequest(
+      `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
+    );
+    const linkedSheet = Array.isArray(sheetRows) && sheetRows.length ? sheetRows[0] : null;
+    if (!linkedSheet?.id) {
+      return res.json({
+        ok: true,
+        removed: false,
+        message: "No active linked sheet"
+      });
+    }
+
+    await supabaseRequest(
+      `/rest/v1/portfolio_items?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}`,
+      { method: "DELETE" }
+    );
+
+    await supabaseRequest(
+      `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}`,
+      { method: "DELETE" }
+    );
+
+    await supabaseRequest(
+      `/rest/v1/user_sheets?id=eq.${encodeURIComponent(linkedSheet.id)}&user_id=eq.${encodeURIComponent(userId)}`,
+      { method: "DELETE" }
+    );
+
+    return res.json({
+      ok: true,
+      removed: true,
+      sheetId: linkedSheet.id
+    });
+  } catch (error) {
+    console.error("Unbind error:", error);
+    return res.status(500).json({
+      error: "UnbindFailed",
       message: error.message
     });
   }
