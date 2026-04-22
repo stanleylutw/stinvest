@@ -92,6 +92,21 @@ const DEFAULT_RANGES = [
   "'09_歷史紀錄'!A1:M5000"
 ];
 
+function isGoogleReauthError(error) {
+  if (!error) return false;
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("invalid_grant")) return true;
+  const gaxiosError = error?.response?.data?.error;
+  if (typeof gaxiosError === "string" && gaxiosError.toLowerCase() === "invalid_grant") {
+    return true;
+  }
+  const nestedError = error?.errors?.[0]?.reason;
+  if (typeof nestedError === "string" && nestedError.toLowerCase() === "invalid_grant") {
+    return true;
+  }
+  return false;
+}
+
 app.use(express.static(__dirname));
 
 app.get("/health", (_req, res) => {
@@ -547,10 +562,10 @@ app.get("/api/portfolio", async (req, res) => {
         valueRanges: data.valueRanges
       });
     } catch (error) {
-      if (error?.code === "GoogleNotLinked") {
+      if (error?.code === "GoogleNotLinked" || isGoogleReauthError(error)) {
         return res.status(401).json({
           error: "GoogleNotLinked",
-          message: "Please connect Google Sheets access first"
+          message: "Google authorization expired. Please reconnect Google Sheets access."
         });
       }
       return res.status(500).json({
@@ -737,10 +752,10 @@ app.post("/api/sync", async (req, res) => {
     });
   } catch (error) {
     console.error("Sync error:", error);
-    if (error?.code === "GoogleNotLinked") {
+    if (error?.code === "GoogleNotLinked" || isGoogleReauthError(error)) {
       return res.status(401).json({
         error: "GoogleNotLinked",
-        message: "Please connect Google Sheets access first"
+        message: "Google authorization expired. Please reconnect Google Sheets access."
       });
     }
     if (syncLogId) {

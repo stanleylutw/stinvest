@@ -7,6 +7,7 @@
   <meta name="application-name" content="ST投資總表" />
   <meta name="apple-mobile-web-app-title" content="ST投資總表" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0f8f9b" />
 
   <link rel="icon" type="image/png" sizes="32x32" href="./stinvest_logo3.png" />
@@ -1471,6 +1472,7 @@
     let refreshTimer = null;
     let autoSyncTimer = null;
     let isSyncInProgress = false;
+    let googleReconnectRequired = false;
     let syncMode = "manual";
     let moneyMasked = false;
     let lastRefreshTriggeredAt = 0;
@@ -2392,7 +2394,7 @@
       // UX first: show cached data immediately, then sync in background.
       await loadData();
 
-      if (withSync && currentUserId && currentLinkedSheetRowId) {
+      if (withSync && currentUserId && currentLinkedSheetRowId && !googleReconnectRequired) {
         syncNow({ fromAuto: true });
       }
     }
@@ -2834,6 +2836,9 @@
       isSyncInProgress = true;
       btnSyncNow.disabled = true;
       setSyncStatus(fromAuto ? "自動同步中..." : "同步中...");
+      if (!fromAuto) {
+        googleReconnectRequired = false;
+      }
       try {
         const headers = {
           "Content-Type": "application/json",
@@ -2853,9 +2858,14 @@
           } catch (_err) {
             parsed = null;
           }
-          if (!fromAuto && parsed?.error === "GoogleNotLinked") {
-            setSyncStatus("尚未連接 Google Sheet 存取，導向授權中...");
-            await redirectToGoogleSheetsLink();
+          if (parsed?.error === "GoogleNotLinked") {
+            googleReconnectRequired = true;
+            if (!fromAuto) {
+              setSyncStatus("Google 授權已失效，導向重新授權...");
+              await redirectToGoogleSheetsLink();
+            } else {
+              setSyncStatus("自動同步暫停：Google 授權失效，請按「立即同步」重新授權", true);
+            }
             if (throwOnError) {
               throw new Error("GoogleNotLinked");
             }
