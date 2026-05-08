@@ -1687,7 +1687,7 @@
     }
 
     function visibleColumnCount() {
-      return Math.max(visibleColumns.length + 1, 1);
+      return Math.max(visibleColumns.length, 1);
     }
 
     function rebuildSortOptions() {
@@ -2300,26 +2300,24 @@
         }
 
         body.push(`<tr class="group-row" ${rowStyle}><td colspan="${colspan}"><span class="account-tag">${account}</span></td></tr>`);
-        const repeatHeadCells = [td("帳戶")];
-        repeatHeadCells.push(...visibleColumns.map((col) => td(col.label)));
+        const repeatHeadCells = visibleColumns.map((col) => td(col.label));
         body.push(`<tr class="group-head-repeat" ${rowStyle}>${repeatHeadCells.join("")}</tr>`);
 
         items.forEach((row) => {
-          const cols = [td(row.account || "--")];
-          cols.push(...visibleColumns.map((col) => {
+          const cols = visibleColumns.map((col) => {
             const rawValue = row.cells[col.index] || "--";
             const value = maskValueIfNeeded(rawValue, col.index);
             const needColor = [idx.move, idx.profit, idx.profitRate, idx.profitWithDividend, idx.profitWithDividendRate].includes(col.index);
             if (!needColor) return td(value);
             const isMoveCol = col.index === idx.move;
             return td(value, isMoveCol ? classByValue(rawValue) : classByValueBlackPositive(rawValue));
-          }));
+          });
           body.push(`<tr>${cols.join("")}</tr>`);
         });
 
         const summaryRow = groupSummaries.get(account) || null;
-        let subtotalCells = [td("小計")];
-        subtotalCells.push(...visibleColumns.map((col) => {
+        const subtotalCells = visibleColumns.map((col, i) => {
+          if (i === 0) return td("小計");
           if (!sumCols.includes(col.index)) return "<td></td>";
           const fromSheet = summaryRow ? summaryRow[col.index] : "";
           const hasSheetValue = String(fromSheet || "").trim() !== "";
@@ -2333,7 +2331,7 @@
           const forColor = hasSheetValue ? String(fromSheet) : String(sum);
           const klass = classByValueBlackPositive(forColor);
           return td(maskedTxt, klass);
-        }));
+        });
         body.push(`<tr class="subtotal-row">${subtotalCells.join("")}</tr>`);
 
         if (groupIndex < groupOrder.length - 1) {
