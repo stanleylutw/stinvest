@@ -376,6 +376,20 @@
       color: #b42318;
     }
 
+    .debug-tools {
+      display: flex;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .debug-hint {
+      margin: 0.4rem 0 0;
+      color: #7b8797;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
     .btn {
       border: 1px solid #cbd5e1;
       background: #fff;
@@ -1213,6 +1227,14 @@
               <span id="syncStatusText" class="auth-sync-status">同步狀態：待命</span>
             </div>
           </div>
+          <div class="settings-group">
+            <h3 class="settings-group-title">除錯工具</h3>
+            <div class="debug-tools">
+              <button id="btnCopyLog" class="btn subtle" type="button">Copy Log</button>
+              <button id="btnClearLog" class="btn subtle" type="button">Clear Log</button>
+            </div>
+            <p class="debug-hint">可複製載入/同步流程紀錄，提供除錯慢速問題。</p>
+          </div>
         </div>
       </div>
     </section>
@@ -1428,6 +1450,8 @@
     const syncModeHint = document.getElementById("syncModeHint");
     const btnSyncNow = document.getElementById("btnSyncNow");
     const syncStatusText = document.getElementById("syncStatusText");
+    const btnCopyLog = document.getElementById("btnCopyLog");
+    const btnClearLog = document.getElementById("btnClearLog");
     const holdingsHead = document.getElementById("holdingsHead");
     const holdingsBody = document.getElementById("holdingsBody");
     const allocRows = document.getElementById("allocRows");
@@ -1482,6 +1506,54 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
     const MONEY_MASK_TEXT = "*****";
+    const DEBUG_LOG_LIMIT = 500;
+    const debugLogs = [];
+
+    function safeSerialize(value) {
+      if (value === undefined) return "";
+      try {
+        return typeof value === "string" ? value : JSON.stringify(value);
+      } catch (_err) {
+        return String(value);
+      }
+    }
+
+    function addDebugLog(level, message, data) {
+      const entry = {
+        ts: new Date().toISOString(),
+        level: String(level || "INFO").toUpperCase(),
+        message: String(message || ""),
+        data: data === undefined ? "" : safeSerialize(data)
+      };
+      debugLogs.push(entry);
+      if (debugLogs.length > DEBUG_LOG_LIMIT) {
+        debugLogs.splice(0, debugLogs.length - DEBUG_LOG_LIMIT);
+      }
+      const tail = entry.data ? ` | ${entry.data}` : "";
+      console.log(`[STINVEST][${entry.level}] ${entry.ts} ${entry.message}${tail}`);
+    }
+
+    function exportDebugLogText() {
+      return debugLogs
+        .map((entry) => `${entry.ts} [${entry.level}] ${entry.message}${entry.data ? ` | ${entry.data}` : ""}`)
+        .join("\n");
+    }
+
+    async function copyDebugLog() {
+      const text = exportDebugLogText() || "No logs yet.";
+      try {
+        await navigator.clipboard.writeText(text);
+        setSyncStatus("除錯紀錄已複製");
+      } catch (_err) {
+        setSyncStatus("複製失敗，請改用瀏覽器 console 複製", true);
+      }
+    }
+
+    function clearDebugLog() {
+      debugLogs.length = 0;
+      addDebugLog("INFO", "Debug logs cleared by user");
+      setSyncStatus("除錯紀錄已清除");
+    }
 
     const HISTORY_METRIC_OPTIONS = [
       { key: "none", label: "無", axis: "none" },
@@ -2387,16 +2459,23 @@
     }
 
     async function triggerImmediateRefresh({ force = false, withSync = true } = {}) {
+      const t0 = performance.now();
       const now = Date.now();
-      if (!force && now - lastRefreshTriggeredAt < 5000) return;
+      if (!force && now - lastRefreshTriggeredAt < 5000) {
+        addDebugLog("DEBUG", "triggerImmediateRefresh skipped (throttled)", { force, withSync });
+        return;
+      }
       lastRefreshTriggeredAt = now;
+      addDebugLog("INFO", "triggerImmediateRefresh start", { force, withSync });
 
       // UX first: show cached data immediately, then sync in background.
       await loadData();
 
       if (withSync && currentUserId && currentLinkedSheetRowId && !googleReconnectRequired) {
+        addDebugLog("INFO", "triggerImmediateRefresh background sync requested");
         syncNow({ fromAuto: true });
       }
+      addDebugLog("INFO", "triggerImmediateRefresh done", { elapsedMs: Math.round(performance.now() - t0) });
     }
 
     function parseRows(data) {
@@ -2473,12 +2552,14 @@
       if (!sheetBindStatus) return;
       sheetBindStatus.textContent = message;
       sheetBindStatus.classList.toggle("error", !!isError);
+      addDebugLog(isError ? "ERROR" : "INFO", "sheet status", { message, isError });
     }
 
     function setSyncStatus(message, isError = false) {
       if (!syncStatusText) return;
       syncStatusText.textContent = `同步狀態：${message}`;
       syncStatusText.classList.toggle("error", !!isError);
+      addDebugLog(isError ? "ERROR" : "INFO", "sync status", { message, isError });
     }
 
     async function getSupabaseAccessToken() {
@@ -2673,7 +2754,9 @@
     }
 
     async function loadLinkedSheet(userId) {
+      const t0 = performance.now();
       if (!supabaseClient || !userId) return;
+      addDebugLog("INFO", "loadLinkedSheet start", { userId });
       const { data, error } = await supabaseClient
         .from("user_sheets")
         .select("id, sheet_url, spreadsheet_id, last_synced_at")
@@ -2683,6 +2766,7 @@
         .limit(1);
       if (error) {
         setSheetBindStatus(`讀取綁定失敗：${error.message}`, true);
+        addDebugLog("ERROR", "loadLinkedSheet failed", { message: error.message });
         return;
       }
       const row = Array.isArray(data) && data.length ? data[0] : null;
@@ -2696,6 +2780,9 @@
         clearDashboardForUnlinkedSheet();
         statusText.textContent = "請先綁定 Google Sheet";
         configureAutoSync();
+        addDebugLog("INFO", "loadLinkedSheet done (no active sheet)", {
+          elapsedMs: Math.round(performance.now() - t0)
+        });
         return;
       }
       currentLinkedSheetRowId = row.id || "";
@@ -2708,6 +2795,11 @@
       setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
       setSyncStatus(row.last_synced_at ? `已同步（${new Date(row.last_synced_at).toLocaleString("zh-TW")}）` : "待命");
       configureAutoSync();
+      addDebugLog("INFO", "loadLinkedSheet done", {
+        sheetRowId: row.id,
+        spreadsheetId: row.spreadsheet_id,
+        elapsedMs: Math.round(performance.now() - t0)
+      });
     }
 
     async function unbindLinkedSheet() {
@@ -2767,6 +2859,7 @@
     }
 
     async function saveLinkedSheet() {
+      const t0 = performance.now();
       if (!supabaseClient || !currentUserId) {
         setSheetBindStatus("請先登入再綁定 Sheet", true);
         return;
@@ -2779,6 +2872,7 @@
       }
       setSheetBindStatus("初始化中（1/4：驗證 Google Sheet 網址）...");
       setSyncStatus("初始化中...");
+      addDebugLog("INFO", "saveLinkedSheet start", { spreadsheetId });
       btnSaveSheetLink.disabled = true;
       btnUnbindSheet.disabled = true;
       btnSyncNow.disabled = true;
@@ -2812,9 +2906,14 @@
         await syncNow({ fromAuto: false, throwOnError: true });
         await loadLinkedSheet(currentUserId);
         setSheetBindStatus(`已綁定：${spreadsheetId}（初始化完成）`);
+        addDebugLog("INFO", "saveLinkedSheet done", {
+          spreadsheetId,
+          elapsedMs: Math.round(performance.now() - t0)
+        });
       } catch (err) {
         setSheetBindStatus(`綁定失敗：${err.message || err}`, true);
         setSyncStatus("初始化失敗", true);
+        addDebugLog("ERROR", "saveLinkedSheet failed", { message: String(err?.message || err) });
       } finally {
         btnSaveSheetLink.disabled = false;
         btnUnbindSheet.disabled = !currentLinkedSheetRowId;
@@ -2823,11 +2922,18 @@
     }
 
     async function syncNow({ fromAuto = false, throwOnError = false } = {}) {
+      const t0 = performance.now();
       if (!currentUserId || !currentLinkedSheetRowId) {
         if (!fromAuto) setSyncStatus("請先綁定 Sheet", true);
         return;
       }
       if (isSyncInProgress) return;
+      addDebugLog("INFO", "syncNow start", {
+        fromAuto,
+        throwOnError,
+        userId: currentUserId,
+        sheetRowId: currentLinkedSheetRowId
+      });
       const sbAccessToken = await getSupabaseAccessToken();
       if (!sbAccessToken) {
         if (!fromAuto) setSyncStatus("請先重新登入", true);
@@ -2874,12 +2980,14 @@
           throw new Error(parsed?.message || text);
         }
         const syncPayload = await res.json();
+        addDebugLog("INFO", "syncNow api success", syncPayload);
         await loadData();
         await loadLinkedSheet(currentUserId);
         const doneAt = syncPayload?.finishedAt
           ? new Date(syncPayload.finishedAt).toLocaleString("zh-TW")
           : new Date().toLocaleString("zh-TW");
         setSyncStatus(`${fromAuto ? "自動" : ""}完成（${doneAt}）`);
+        addDebugLog("INFO", "syncNow done", { elapsedMs: Math.round(performance.now() - t0) });
       } catch (err) {
         if (!fromAuto) {
           setSyncStatus(`失敗（${err.message || err}）`, true);
@@ -2889,6 +2997,10 @@
         if (throwOnError) {
           throw err;
         }
+        addDebugLog("ERROR", "syncNow failed", {
+          elapsedMs: Math.round(performance.now() - t0),
+          message: String(err?.message || err)
+        });
       } finally {
         isSyncInProgress = false;
         btnSyncNow.disabled = !currentLinkedSheetRowId;
@@ -2913,6 +3025,8 @@
     }
 
     async function ensureSupabaseAuth() {
+      const t0 = performance.now();
+      addDebugLog("INFO", "ensureSupabaseAuth start");
       if (!SUPABASE_LOGIN_ENABLED) {
         authUserText.textContent = "未設定 Supabase anon key（請先填入）";
         btnLoginGoogle.style.display = "none";
@@ -2925,6 +3039,7 @@
         setSyncMode("manual", { persist: false });
         setAppLocked(false);
         setSettingsOpen(false);
+        addDebugLog("WARN", "ensureSupabaseAuth bypass (SUPABASE_LOGIN_ENABLED=false)");
         return true;
       }
       const {
@@ -2946,6 +3061,9 @@
         setSyncMode("manual", { persist: false });
         setAppLocked(true);
         setSettingsOpen(false);
+        addDebugLog("INFO", "ensureSupabaseAuth done (no session)", {
+          elapsedMs: Math.round(performance.now() - t0)
+        });
         return false;
       }
       currentUserId = session.user?.id || "";
@@ -2961,6 +3079,10 @@
       setSyncMode(savedMode, { persist: false });
       await loadCloudSettings(currentUserId);
       setAppLocked(false);
+      addDebugLog("INFO", "ensureSupabaseAuth done", {
+        userId: currentUserId,
+        elapsedMs: Math.round(performance.now() - t0)
+      });
       return true;
     }
 
@@ -2982,6 +3104,8 @@
     }
 
     async function loadData() {
+      const t0 = performance.now();
+      addDebugLog("INFO", "loadData start");
       lastRefreshTriggeredAt = Date.now();
       statusText.textContent = "更新中...";
       setRefreshingUI(true);
@@ -2994,11 +3118,16 @@
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
           sbAccessToken = await getSupabaseAccessToken();
           if (sbAccessToken) {
+            const cacheT0 = performance.now();
             const cacheRes = await fetch(API_CACHED_URL, {
               cache: "no-store",
               headers: {
                 Authorization: `Bearer ${sbAccessToken}`
               }
+            });
+            addDebugLog("DEBUG", "cache fetch finished", {
+              status: cacheRes.status,
+              elapsedMs: Math.round(performance.now() - cacheT0)
             });
             if (cacheRes.ok) {
               const cacheJson = await cacheRes.json();
@@ -3010,6 +3139,7 @@
         }
 
         if (!data) {
+          addDebugLog("INFO", "loadData fallback to API_URL");
           const tokenFromHash = readApiTokenFromHash();
           const apiToken = tokenFromHash || localStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
           const fetchOptions = {
@@ -3022,6 +3152,7 @@
             fetchOptions.headers = { Authorization: `Bearer ${apiToken}` };
           }
           const res = await fetch(API_URL, fetchOptions);
+          addDebugLog("DEBUG", "api fetch finished", { status: res.status });
           if (res.status === 401) {
             const unauthorizedText = await res.text();
             let unauthorizedJson = null;
@@ -3091,8 +3222,16 @@
         updatedAt.textContent = effectiveSyncedAt
           ? new Date(effectiveSyncedAt).toLocaleString("zh-TW")
           : "--";
+        addDebugLog("INFO", "loadData done", {
+          loadedFromCache,
+          elapsedMs: Math.round(performance.now() - t0)
+        });
       } catch (err) {
         console.error(err);
+        addDebugLog("ERROR", "loadData failed", {
+          elapsedMs: Math.round(performance.now() - t0),
+          message: String(err?.message || err)
+        });
         const messageText = String(err?.message || "");
         if (
           messageText.includes("Please bind Google Sheet URL first")
@@ -3171,6 +3310,8 @@
     btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
     btnUnbindSheet.addEventListener("click", unbindLinkedSheet);
     btnSyncNow.addEventListener("click", syncNow);
+    btnCopyLog.addEventListener("click", copyDebugLog);
+    btnClearLog.addEventListener("click", clearDebugLog);
     syncModeSelect.addEventListener("change", () => {
       setSyncMode(syncModeSelect.value, { persist: true });
       if (syncMode === "auto") {
@@ -3203,6 +3344,7 @@
     });
 
     (async () => {
+      addDebugLog("INFO", "app bootstrap start");
       setSettingsOpen(false);
       applyMoneyMaskUI();
       setSyncMode("manual", { persist: false });
@@ -3210,6 +3352,7 @@
       if (!ready) return;
       await triggerImmediateRefresh({ force: true, withSync: true });
       refreshTimer = setInterval(loadData, REFRESH_MS);
+      addDebugLog("INFO", "app bootstrap done");
     })();
   </script>
 </body>
