@@ -91,6 +91,7 @@ const DEFAULT_RANGES = [
   "'02_投資分布圖'!A1:Z300",
   "'09_歷史紀錄'!A1:M5000"
 ];
+const FAST_SYNC_RANGES = DEFAULT_RANGES.slice(0, 2);
 
 function isGoogleReauthError(error) {
   if (!error) return false;
@@ -437,6 +438,29 @@ async function fetchSheetDataByUserId(userId, targetSpreadsheetId, ranges = DEFA
   );
 }
 
+async function getLatestCachedPayload(userId, sheetId) {
+  const rows = await supabaseRequest(
+    `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=payload_json`
+  );
+  const latest = Array.isArray(rows) && rows.length ? rows[0] : null;
+  return latest?.payload_json || null;
+}
+
+function mergeWithCachedHistory(sheetData, cachedPayload) {
+  const cachedHistory = cachedPayload?.valueRanges?.[2] || null;
+  if (!cachedHistory) return sheetData;
+  const nextValueRanges = [
+    sheetData.valueRanges?.[0] || { range: DEFAULT_RANGES[0], majorDimension: "ROWS", values: [] },
+    sheetData.valueRanges?.[1] || { range: DEFAULT_RANGES[1], majorDimension: "ROWS", values: [] },
+    cachedHistory
+  ];
+  return {
+    spreadsheetId: sheetData.spreadsheetId,
+    ranges: DEFAULT_RANGES,
+    valueRanges: nextValueRanges
+  };
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of issuedApiTokens.entries()) {
@@ -680,6 +704,14 @@ app.post("/api/sync", async (req, res) => {
       });
     }
 
+    const wantsFastSync = req.body?.fast === true;
+    const cachedPayload = wantsFastSync
+      ? await getLatestCachedPayload(userId, linkedSheet.id)
+      : null;
+    const syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
+      ? FAST_SYNC_RANGES
+      : DEFAULT_RANGES;
+
     const logRows = await supabaseRequest("/rest/v1/sync_logs", {
       method: "POST",
       headers: { Prefer: "return=representation" },
@@ -689,16 +721,19 @@ app.post("/api/sync", async (req, res) => {
         spreadsheet_id: linkedSheet.spreadsheet_id,
         status: "running",
         started_at: new Date().toISOString(),
-        source_ranges: DEFAULT_RANGES
+        source_ranges: syncRanges
       }
     });
     syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
 
-    const sheetData = await fetchSheetDataByUserId(
+    const fetchedSheetData = await fetchSheetDataByUserId(
       userId,
       linkedSheet.spreadsheet_id,
-      DEFAULT_RANGES
+      syncRanges
     );
+    const sheetData = wantsFastSync
+      ? mergeWithCachedHistory(fetchedSheetData, cachedPayload)
+      : fetchedSheetData;
 
     const items = buildPortfolioItemsFromSheet(sheetData.valueRanges, {
       userId,
@@ -748,6 +783,7 @@ app.post("/api/sync", async (req, res) => {
       sheetId: linkedSheet.id,
       spreadsheetId: linkedSheet.spreadsheet_id,
       syncedRows: items.length,
+      fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
       finishedAt
     });
   } catch (error) {

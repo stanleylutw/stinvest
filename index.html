@@ -1492,6 +1492,8 @@
     let latestHistoryLatest = null;
     let latestHistorySnapshots = [];
     let latestSummary = null;
+    let latestHistoryCacheKey = "";
+    let latestParsedHistory = null;
     let visibleColumns = [];
     let refreshTimer = null;
     let autoSyncTimer = null;
@@ -1502,6 +1504,7 @@
     let lastRefreshTriggeredAt = 0;
     let currentUserId = "";
     let currentLinkedSheetRowId = "";
+    let appStartupPromise = null;
     const supabaseClient = SUPABASE_LOGIN_ENABLED
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
@@ -2533,6 +2536,11 @@
       versionText.textContent = `v${y}${m}${day}.${hh}${mm}`;
     }
 
+    function isSectionExpanded(selector) {
+      const section = document.querySelector(selector);
+      return !!section && !section.classList.contains("is-collapsed");
+    }
+
     function setAppLocked(locked) {
       appMain.classList.toggle("app-locked", locked);
       document.body.classList.toggle("login-mode", locked);
@@ -2566,6 +2574,43 @@
         data: { session }
       } = await supabaseClient.auth.getSession();
       return session?.access_token || "";
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function hasSupabaseCallbackParams() {
+      const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+      const queryParams = new URLSearchParams(String(window.location.search || "").replace(/^\?/, ""));
+      return !!(
+        hashParams.get("access_token")
+        || hashParams.get("refresh_token")
+        || queryParams.get("code")
+      );
+    }
+
+    async function getSupabaseSessionWithRetry() {
+      const shouldWaitForCallback = hasSupabaseCallbackParams();
+      const maxAttempts = shouldWaitForCallback ? 24 : 2;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const {
+          data: { session }
+        } = await supabaseClient.auth.getSession();
+        if (session) {
+          if (attempt > 0) {
+            addDebugLog("INFO", "Supabase session became ready after retry", { attempt });
+          }
+          return session;
+        }
+        if (!shouldWaitForCallback) break;
+        if (attempt === 0) {
+          authUserText.textContent = "登入確認中...";
+          addDebugLog("INFO", "Waiting for Supabase OAuth callback session");
+        }
+        await sleep(150);
+      }
+      return null;
     }
 
     async function redirectToGoogleSheetsLink() {
@@ -2694,6 +2739,8 @@
       latestHistoryDaily = [];
       latestHistoryLatest = null;
       latestHistorySnapshots = [];
+      latestHistoryCacheKey = "";
+      latestParsedHistory = null;
 
       Object.values(kpiEls).forEach((el) => {
         if (!el) return;
@@ -2952,7 +2999,7 @@
           method: "POST",
           credentials: "include",
           headers,
-          body: JSON.stringify({})
+          body: JSON.stringify({ fast: fromAuto })
         });
         if (!res.ok) {
           const text = await res.text();
@@ -3040,9 +3087,7 @@
         addDebugLog("WARN", "ensureSupabaseAuth bypass (SUPABASE_LOGIN_ENABLED=false)");
         return true;
       }
-      const {
-        data: { session }
-      } = await supabaseClient.auth.getSession();
+      const session = await getSupabaseSessionWithRetry();
       if (!session) {
         currentUserId = "";
         currentLinkedSheetRowId = "";
@@ -3084,6 +3129,60 @@
       return true;
     }
 
+    async function startAppDataFlow(reason, options = {}) {
+      const { force = false, withSync = true } = options;
+      if (appStartupPromise) {
+        addDebugLog("DEBUG", "startAppDataFlow reused existing promise", { reason });
+        return appStartupPromise;
+      }
+      appStartupPromise = (async () => {
+        addDebugLog("INFO", "startAppDataFlow start", { reason, force, withSync });
+        try {
+          const ready = await ensureSupabaseAuth();
+          if (!ready) return false;
+          await triggerImmediateRefresh({ force, withSync });
+          if (!refreshTimer) {
+            refreshTimer = setInterval(loadData, REFRESH_MS);
+          }
+          addDebugLog("INFO", "startAppDataFlow done", { reason });
+          return true;
+        } catch (error) {
+          addDebugLog("ERROR", "startAppDataFlow failed", {
+            reason,
+            message: String(error?.message || error)
+          });
+          statusText.textContent = "更新失敗（初始化失敗）";
+          return false;
+        } finally {
+          appStartupPromise = null;
+        }
+      })();
+      return appStartupPromise;
+    }
+
+    function setupSupabaseAuthListener() {
+      if (!supabaseClient) return;
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        addDebugLog("INFO", "Supabase auth event", {
+          event,
+          userId: session?.user?.id || ""
+        });
+        if (event === "SIGNED_OUT") {
+          currentUserId = "";
+          currentLinkedSheetRowId = "";
+          clearDashboardForUnlinkedSheet();
+          setAppLocked(true);
+          setSettingsOpen(false);
+          return;
+        }
+        if (session?.user?.id && ["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED"].includes(event)) {
+          setTimeout(() => {
+            startAppDataFlow(`auth:${event}`, { force: event === "SIGNED_IN", withSync: event !== "TOKEN_REFRESHED" });
+          }, 0);
+        }
+      });
+    }
+
     function readApiTokenFromHash() {
       const raw = String(window.location.hash || "");
       if (!raw || !raw.startsWith("#")) return "";
@@ -3111,6 +3210,7 @@
         let data = null;
         let loadedFromCache = false;
         let effectiveSyncedAt = "";
+        let effectiveSyncLogId = "";
         let sbAccessToken = "";
 
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
@@ -3132,8 +3232,30 @@
               data = cacheJson.data || null;
               loadedFromCache = !!data;
               effectiveSyncedAt = cacheJson.cachedAt || "";
+              effectiveSyncLogId = cacheJson.syncLogId || "";
+            } else {
+              const raw = await cacheRes.text();
+              let parsed = null;
+              try {
+                parsed = JSON.parse(raw);
+              } catch (_err) {
+                parsed = null;
+              }
+              addDebugLog("WARN", "cache fetch returned non-ok", {
+                status: cacheRes.status,
+                error: parsed?.error || "",
+                message: parsed?.message || raw
+              });
+              if (["NoLinkedSheet", "NoCache", "Unauthorized"].includes(parsed?.error)) {
+                throw new Error(parsed?.message || parsed?.error);
+              }
+              throw new Error(parsed?.message || raw || "Cache read failed");
             }
           }
+        }
+
+        if (SUPABASE_LOGIN_ENABLED && currentUserId && !data) {
+          throw new Error("No synced cache found. Please run sync first.");
         }
 
         if (!data) {
@@ -3198,7 +3320,16 @@
 
         const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
         const distItems = parseDistribution(data);
-        const history = parseHistory(data);
+        const history = effectiveSyncLogId && effectiveSyncLogId === latestHistoryCacheKey && latestParsedHistory
+          ? latestParsedHistory
+          : parseHistory(data);
+        if (effectiveSyncLogId) {
+          latestHistoryCacheKey = effectiveSyncLogId;
+          latestParsedHistory = history;
+        } else {
+          latestHistoryCacheKey = "";
+          latestParsedHistory = null;
+        }
         latestSummary = summary;
         latestHoldings = holdings;
         latestGroupSummaries = groupSummaries;
@@ -3213,8 +3344,12 @@
         renderKpis(summary);
         renderKpiDeltas(summary, history);
         renderAlloc(groups, holdings);
-        renderDistribution(distItems, latestDistDeltaInfo);
-        renderHistoryTrendChart(history.daily);
+        if (isSectionExpanded("#sec-distribution")) {
+          renderDistribution(distItems, latestDistDeltaInfo);
+        }
+        if (isSectionExpanded("#sec-history-trend")) {
+          renderHistoryTrendChart(history.daily);
+        }
         renderHoldings(holdings, groupSummaries);
         statusText.textContent = loadedFromCache ? "已更新（快取）" : "已更新";
         updatedAt.textContent = effectiveSyncedAt
@@ -3239,6 +3374,9 @@
         ) {
           clearDashboardForUnlinkedSheet();
           statusText.textContent = "請先綁定 Google Sheet";
+        } else if (messageText.includes("No synced cache found")) {
+          clearDashboardForUnlinkedSheet();
+          statusText.textContent = "請先同步資料";
         } else if (messageText.includes("Unauthorized after login redirect")) {
           statusText.textContent = "更新失敗（授權逾時，請重新整理重試）";
         } else {
@@ -3287,10 +3425,10 @@
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (latestDistItems.length > 0) {
+        if (latestDistItems.length > 0 && isSectionExpanded("#sec-distribution")) {
           renderDistribution(latestDistItems, latestDistDeltaInfo);
         }
-        if (latestHistoryDaily.length > 0) {
+        if (latestHistoryDaily.length > 0 && isSectionExpanded("#sec-history-trend")) {
           renderHistoryTrendChart(latestHistoryDaily);
         }
       }, 120);
@@ -3343,13 +3481,11 @@
 
     (async () => {
       addDebugLog("INFO", "app bootstrap start");
+      setupSupabaseAuthListener();
       setSettingsOpen(false);
       applyMoneyMaskUI();
       setSyncMode("manual", { persist: false });
-      const ready = await ensureSupabaseAuth();
-      if (!ready) return;
-      await triggerImmediateRefresh({ force: true, withSync: true });
-      refreshTimer = setInterval(loadData, REFRESH_MS);
+      await startAppDataFlow("bootstrap", { force: true, withSync: true });
       addDebugLog("INFO", "app bootstrap done");
     })();
   </script>
