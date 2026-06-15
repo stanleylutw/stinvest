@@ -92,6 +92,7 @@ const DEFAULT_RANGES = [
   "'09_歷史紀錄'!A1:M5000"
 ];
 const FAST_SYNC_RANGES = DEFAULT_RANGES.slice(0, 2);
+const HISTORY_RANGE = DEFAULT_RANGES[2];
 
 function isGoogleReauthError(error) {
   if (!error) return false;
@@ -461,6 +462,60 @@ function mergeWithCachedHistory(sheetData, cachedPayload) {
   };
 }
 
+function normalizeSheetDate(value) {
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (!m) return "";
+  return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
+}
+
+function sheetDateToNumber(value) {
+  const normalized = normalizeSheetDate(value);
+  if (!normalized) return 0;
+  return Number(normalized.replace(/\//g, ""));
+}
+
+function getDistributionReportDate(sheetData) {
+  const rows = sheetData?.valueRanges?.[1]?.values || [];
+  for (const row of rows.slice(0, 5)) {
+    const label = String(row?.[0] || "").trim();
+    if (label === "日期") {
+      return normalizeSheetDate(row?.[1]);
+    }
+  }
+  return "";
+}
+
+function getLatestHistoryReportDateFromPayload(payload) {
+  const rows = payload?.valueRanges?.[2]?.values || [];
+  if (rows.length < 2) return "";
+  const header = rows[0].map((h) => String(h || "").trim());
+  const reportDateIndex = header.indexOf("報表日期");
+  if (reportDateIndex < 0) return "";
+  let latest = "";
+  rows.slice(1).forEach((row) => {
+    const d = normalizeSheetDate(row?.[reportDateIndex]);
+    if (sheetDateToNumber(d) > sheetDateToNumber(latest)) {
+      latest = d;
+    }
+  });
+  return latest;
+}
+
+function mergeWithHistoryRange(sheetData, historySheetData) {
+  const fetchedHistory = historySheetData?.valueRanges?.[0] || null;
+  if (!fetchedHistory) return sheetData;
+  return {
+    spreadsheetId: sheetData.spreadsheetId,
+    ranges: DEFAULT_RANGES,
+    valueRanges: [
+      sheetData.valueRanges?.[0] || { range: DEFAULT_RANGES[0], majorDimension: "ROWS", values: [] },
+      sheetData.valueRanges?.[1] || { range: DEFAULT_RANGES[1], majorDimension: "ROWS", values: [] },
+      fetchedHistory
+    ]
+  };
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of issuedApiTokens.entries()) {
@@ -708,7 +763,7 @@ app.post("/api/sync", async (req, res) => {
     const cachedPayload = wantsFastSync
       ? await getLatestCachedPayload(userId, linkedSheet.id)
       : null;
-    const syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
+    let syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
       ? FAST_SYNC_RANGES
       : DEFAULT_RANGES;
 
@@ -731,9 +786,26 @@ app.post("/api/sync", async (req, res) => {
       linkedSheet.spreadsheet_id,
       syncRanges
     );
-    const sheetData = wantsFastSync
+    let sheetData = wantsFastSync
       ? mergeWithCachedHistory(fetchedSheetData, cachedPayload)
       : fetchedSheetData;
+
+    if (wantsFastSync && cachedPayload?.valueRanges?.[2]) {
+      const reportDate = getDistributionReportDate(fetchedSheetData);
+      const cachedHistoryDate = getLatestHistoryReportDateFromPayload(cachedPayload);
+      const shouldRefreshHistory = reportDate
+        && sheetDateToNumber(cachedHistoryDate) < sheetDateToNumber(reportDate);
+
+      if (shouldRefreshHistory) {
+        const historySheetData = await fetchSheetDataByUserId(
+          userId,
+          linkedSheet.spreadsheet_id,
+          [HISTORY_RANGE]
+        );
+        sheetData = mergeWithHistoryRange(fetchedSheetData, historySheetData);
+        syncRanges = [...FAST_SYNC_RANGES, HISTORY_RANGE];
+      }
+    }
 
     const items = buildPortfolioItemsFromSheet(sheetData.valueRanges, {
       userId,
@@ -772,6 +844,7 @@ app.post("/api/sync", async (req, res) => {
           finished_at: finishedAt,
           row_count: items.length,
           message: "sync completed",
+          source_ranges: syncRanges,
           payload_json: sheetData
         }
       });
@@ -784,6 +857,7 @@ app.post("/api/sync", async (req, res) => {
       spreadsheetId: linkedSheet.spreadsheet_id,
       syncedRows: items.length,
       fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
+      sourceRanges: syncRanges,
       finishedAt
     });
   } catch (error) {
