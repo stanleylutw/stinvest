@@ -93,6 +93,7 @@ const DEFAULT_RANGES = [
 ];
 const FAST_SYNC_RANGES = DEFAULT_RANGES.slice(0, 2);
 const HISTORY_RANGE = DEFAULT_RANGES[2];
+const HISTORY_REFRESH_RETRY_MS = 1000 * 60 * 30;
 
 function isGoogleReauthError(error) {
   if (!error) return false;
@@ -439,12 +440,19 @@ async function fetchSheetDataByUserId(userId, targetSpreadsheetId, ranges = DEFA
   );
 }
 
-async function getLatestCachedPayload(userId, sheetId) {
+async function getLatestCachedSyncLog(userId, sheetId) {
   const rows = await supabaseRequest(
-    `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=payload_json`
+    `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=payload_json,source_ranges,finished_at`
   );
   const latest = Array.isArray(rows) && rows.length ? rows[0] : null;
-  return latest?.payload_json || null;
+  return latest || null;
+}
+
+function shouldRetryHistoryRefreshSoon(syncLog) {
+  const finishedAt = syncLog?.finished_at ? Date.parse(syncLog.finished_at) : 0;
+  const ranges = Array.isArray(syncLog?.source_ranges) ? syncLog.source_ranges : [];
+  if (!finishedAt || !ranges.includes(HISTORY_RANGE)) return true;
+  return Date.now() - finishedAt > HISTORY_REFRESH_RETRY_MS;
 }
 
 function mergeWithCachedHistory(sheetData, cachedPayload) {
@@ -773,9 +781,10 @@ app.post("/api/sync", async (req, res) => {
     }
 
     const wantsFastSync = req.body?.fast === true;
-    const cachedPayload = wantsFastSync
-      ? await measure("supabase:sync_logs.latest_cache", () => getLatestCachedPayload(userId, linkedSheet.id))
+    const cachedSyncLog = wantsFastSync
+      ? await measure("supabase:sync_logs.latest_cache", () => getLatestCachedSyncLog(userId, linkedSheet.id))
       : null;
+    const cachedPayload = cachedSyncLog?.payload_json || null;
     let syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
       ? FAST_SYNC_RANGES
       : DEFAULT_RANGES;
@@ -812,8 +821,10 @@ app.post("/api/sync", async (req, res) => {
     if (wantsFastSync && cachedPayload?.valueRanges?.[2]) {
       const reportDate = getDistributionReportDate(fetchedSheetData);
       const cachedHistoryDate = getLatestHistoryReportDateFromPayload(cachedPayload);
-      const shouldRefreshHistory = reportDate
+      const isHistoryStale = reportDate
         && sheetDateToNumber(cachedHistoryDate) < sheetDateToNumber(reportDate);
+      const canRetryHistoryRefresh = shouldRetryHistoryRefreshSoon(cachedSyncLog);
+      const shouldRefreshHistory = isHistoryStale && canRetryHistoryRefresh;
 
       if (shouldRefreshHistory) {
         const historySheetData = await measure(
@@ -826,6 +837,11 @@ app.post("/api/sync", async (req, res) => {
         );
         sheetData = mergeWithHistoryRange(fetchedSheetData, historySheetData);
         syncRanges = [...FAST_SYNC_RANGES, HISTORY_RANGE];
+      } else if (isHistoryStale) {
+        timings.push({
+          label: "google:sheets.history_refresh_skipped_cooldown",
+          ms: 0
+        });
       }
     }
 
