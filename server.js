@@ -743,13 +743,26 @@ app.get("/api/portfolio-cached", async (req, res) => {
 
 app.post("/api/sync", async (req, res) => {
   let syncLogId = "";
+  const syncStartedAt = Date.now();
+  const timings = [];
+  const measure = async (label, fn) => {
+    const stepStartedAt = Date.now();
+    try {
+      return await fn();
+    } finally {
+      timings.push({ label, ms: Date.now() - stepStartedAt });
+    }
+  };
   try {
-    const user = await requireSupabaseUser(req, res);
+    const user = await measure("auth", () => requireSupabaseUser(req, res));
     if (!user) return;
     const userId = user?.id;
 
-    const sheetRows = await supabaseRequest(
-      `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,sheet_url,spreadsheet_id`
+    const sheetRows = await measure(
+      "supabase:user_sheets.read",
+      () => supabaseRequest(
+        `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,sheet_url,spreadsheet_id`
+      )
     );
     const linkedSheet = Array.isArray(sheetRows) && sheetRows.length ? sheetRows[0] : null;
     if (!linkedSheet?.spreadsheet_id) {
@@ -761,30 +774,36 @@ app.post("/api/sync", async (req, res) => {
 
     const wantsFastSync = req.body?.fast === true;
     const cachedPayload = wantsFastSync
-      ? await getLatestCachedPayload(userId, linkedSheet.id)
+      ? await measure("supabase:sync_logs.latest_cache", () => getLatestCachedPayload(userId, linkedSheet.id))
       : null;
     let syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
       ? FAST_SYNC_RANGES
       : DEFAULT_RANGES;
 
-    const logRows = await supabaseRequest("/rest/v1/sync_logs", {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: {
-        user_id: userId,
-        sheet_id: linkedSheet.id,
-        spreadsheet_id: linkedSheet.spreadsheet_id,
-        status: "running",
-        started_at: new Date().toISOString(),
-        source_ranges: syncRanges
-      }
-    });
+    const logRows = await measure(
+      "supabase:sync_logs.create",
+      () => supabaseRequest("/rest/v1/sync_logs", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: {
+          user_id: userId,
+          sheet_id: linkedSheet.id,
+          spreadsheet_id: linkedSheet.spreadsheet_id,
+          status: "running",
+          started_at: new Date().toISOString(),
+          source_ranges: syncRanges
+        }
+      })
+    );
     syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
 
-    const fetchedSheetData = await fetchSheetDataByUserId(
-      userId,
-      linkedSheet.spreadsheet_id,
-      syncRanges
+    const fetchedSheetData = await measure(
+      `google:sheets.batchGet:${syncRanges.length}`,
+      () => fetchSheetDataByUserId(
+        userId,
+        linkedSheet.spreadsheet_id,
+        syncRanges
+      )
     );
     let sheetData = wantsFastSync
       ? mergeWithCachedHistory(fetchedSheetData, cachedPayload)
@@ -797,10 +816,13 @@ app.post("/api/sync", async (req, res) => {
         && sheetDateToNumber(cachedHistoryDate) < sheetDateToNumber(reportDate);
 
       if (shouldRefreshHistory) {
-        const historySheetData = await fetchSheetDataByUserId(
-          userId,
-          linkedSheet.spreadsheet_id,
-          [HISTORY_RANGE]
+        const historySheetData = await measure(
+          "google:sheets.history_refresh",
+          () => fetchSheetDataByUserId(
+            userId,
+            linkedSheet.spreadsheet_id,
+            [HISTORY_RANGE]
+          )
         );
         sheetData = mergeWithHistoryRange(fetchedSheetData, historySheetData);
         syncRanges = [...FAST_SYNC_RANGES, HISTORY_RANGE];
@@ -814,51 +836,81 @@ app.post("/api/sync", async (req, res) => {
       sourceSpreadsheetId: linkedSheet.spreadsheet_id
     });
 
-    await supabaseRequest(
-      `/rest/v1/portfolio_items?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}`,
-      { method: "DELETE" }
+    await measure(
+      "supabase:portfolio_items.delete",
+      () => supabaseRequest(
+        `/rest/v1/portfolio_items?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}`,
+        { method: "DELETE" }
+      )
     );
 
     if (items.length > 0) {
-      await supabaseRequest("/rest/v1/portfolio_items", {
-        method: "POST",
-        body: items
-      });
+      await measure(
+        `supabase:portfolio_items.insert:${items.length}`,
+        () => supabaseRequest("/rest/v1/portfolio_items", {
+          method: "POST",
+          body: items
+        })
+      );
     }
 
     const finishedAt = new Date().toISOString();
 
-    await supabaseRequest(
-      `/rest/v1/user_sheets?id=eq.${encodeURIComponent(linkedSheet.id)}&user_id=eq.${encodeURIComponent(userId)}`,
-      {
-        method: "PATCH",
-        body: { last_synced_at: finishedAt }
-      }
-    );
+    const finalWrites = [
+      measure(
+        "supabase:user_sheets.patch",
+        () => supabaseRequest(
+          `/rest/v1/user_sheets?id=eq.${encodeURIComponent(linkedSheet.id)}&user_id=eq.${encodeURIComponent(userId)}`,
+          {
+            method: "PATCH",
+            body: { last_synced_at: finishedAt }
+          }
+        )
+      )
+    ];
 
     if (syncLogId) {
-      await supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
-        method: "PATCH",
-        body: {
-          status: "success",
-          finished_at: finishedAt,
-          row_count: items.length,
-          message: "sync completed",
-          source_ranges: syncRanges,
-          payload_json: sheetData
-        }
-      });
+      finalWrites.push(
+        measure(
+          "supabase:sync_logs.patch_success",
+          () => supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
+            method: "PATCH",
+            body: {
+              status: "success",
+              finished_at: finishedAt,
+              row_count: items.length,
+              message: "sync completed",
+              source_ranges: syncRanges,
+              payload_json: sheetData
+            }
+          })
+        )
+      );
     }
+    await Promise.all(finalWrites);
+
+    const totalMs = Date.now() - syncStartedAt;
+    console.info("Sync timing", {
+      userId,
+      sheetId: linkedSheet.id,
+      fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
+      totalMs,
+      timings
+    });
 
     return res.json({
       ok: true,
       userId,
       sheetId: linkedSheet.id,
       spreadsheetId: linkedSheet.spreadsheet_id,
+      syncLogId,
       syncedRows: items.length,
       fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
       sourceRanges: syncRanges,
-      finishedAt
+      finishedAt,
+      totalMs,
+      timings,
+      data: sheetData
     });
   } catch (error) {
     console.error("Sync error:", error);

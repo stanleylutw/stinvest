@@ -3026,13 +3026,27 @@
         }
         const syncPayload = await res.json();
         addDebugLog("INFO", "syncNow api success", syncPayload);
-        await loadData();
-        await loadLinkedSheet(currentUserId);
+        if (syncPayload?.data) {
+          renderDashboardData(syncPayload.data, {
+            loadedFromCache: false,
+            effectiveSyncedAt: syncPayload.finishedAt || "",
+            effectiveSyncLogId: syncPayload.syncLogId || ""
+          });
+        } else {
+          await loadData();
+        }
+        if (!fromAuto) {
+          await loadLinkedSheet(currentUserId);
+        }
         const doneAt = syncPayload?.finishedAt
           ? new Date(syncPayload.finishedAt).toLocaleString("zh-TW")
           : new Date().toLocaleString("zh-TW");
         setSyncStatus(`${fromAuto ? "自動" : ""}完成（${doneAt}）`);
-        addDebugLog("INFO", "syncNow done", { elapsedMs: Math.round(performance.now() - t0) });
+        addDebugLog("INFO", "syncNow done", {
+          elapsedMs: Math.round(performance.now() - t0),
+          serverTotalMs: syncPayload?.totalMs || null,
+          timings: syncPayload?.timings || []
+        });
       } catch (err) {
         if (!fromAuto) {
           setSyncStatus(`失敗（${err.message || err}）`, true);
@@ -3200,6 +3214,50 @@
       sessionStorage.removeItem(AUTH_REDIRECT_AT_KEY);
     }
 
+    function renderDashboardData(data, {
+      loadedFromCache = false,
+      effectiveSyncedAt = "",
+      effectiveSyncLogId = ""
+    } = {}) {
+      const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
+      const distItems = parseDistribution(data);
+      const history = effectiveSyncLogId && effectiveSyncLogId === latestHistoryCacheKey && latestParsedHistory
+        ? latestParsedHistory
+        : parseHistory(data);
+      if (effectiveSyncLogId) {
+        latestHistoryCacheKey = effectiveSyncLogId;
+        latestParsedHistory = history;
+      } else {
+        latestHistoryCacheKey = "";
+        latestParsedHistory = null;
+      }
+      latestSummary = summary;
+      latestHoldings = holdings;
+      latestGroupSummaries = groupSummaries;
+      latestDistItems = distItems;
+      latestDistDeltaInfo = buildDistributionDeltaInfo(distItems, summary, history);
+      latestHistoryRows = history.rows;
+      latestHistoryDaily = history.daily;
+      latestHistoryLatest = history.latest;
+      latestHistorySnapshots = history.snapshots || [];
+      updateHistoryDateBounds(history.daily);
+      renderTableHeaders(headerRow);
+      renderKpis(summary);
+      renderKpiDeltas(summary, history);
+      renderAlloc(groups, holdings);
+      if (isSectionExpanded("#sec-distribution")) {
+        renderDistribution(distItems, latestDistDeltaInfo);
+      }
+      if (isSectionExpanded("#sec-history-trend")) {
+        renderHistoryTrendChart(history.daily);
+      }
+      renderHoldings(holdings, groupSummaries);
+      statusText.textContent = loadedFromCache ? "已更新（快取）" : "已更新";
+      updatedAt.textContent = effectiveSyncedAt
+        ? new Date(effectiveSyncedAt).toLocaleString("zh-TW")
+        : "--";
+    }
+
     async function loadData() {
       const t0 = performance.now();
       addDebugLog("INFO", "loadData start");
@@ -3318,43 +3376,11 @@
           data = await res.json();
         }
 
-        const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
-        const distItems = parseDistribution(data);
-        const history = effectiveSyncLogId && effectiveSyncLogId === latestHistoryCacheKey && latestParsedHistory
-          ? latestParsedHistory
-          : parseHistory(data);
-        if (effectiveSyncLogId) {
-          latestHistoryCacheKey = effectiveSyncLogId;
-          latestParsedHistory = history;
-        } else {
-          latestHistoryCacheKey = "";
-          latestParsedHistory = null;
-        }
-        latestSummary = summary;
-        latestHoldings = holdings;
-        latestGroupSummaries = groupSummaries;
-        latestDistItems = distItems;
-        latestDistDeltaInfo = buildDistributionDeltaInfo(distItems, summary, history);
-        latestHistoryRows = history.rows;
-        latestHistoryDaily = history.daily;
-        latestHistoryLatest = history.latest;
-        latestHistorySnapshots = history.snapshots || [];
-        updateHistoryDateBounds(history.daily);
-        renderTableHeaders(headerRow);
-        renderKpis(summary);
-        renderKpiDeltas(summary, history);
-        renderAlloc(groups, holdings);
-        if (isSectionExpanded("#sec-distribution")) {
-          renderDistribution(distItems, latestDistDeltaInfo);
-        }
-        if (isSectionExpanded("#sec-history-trend")) {
-          renderHistoryTrendChart(history.daily);
-        }
-        renderHoldings(holdings, groupSummaries);
-        statusText.textContent = loadedFromCache ? "已更新（快取）" : "已更新";
-        updatedAt.textContent = effectiveSyncedAt
-          ? new Date(effectiveSyncedAt).toLocaleString("zh-TW")
-          : "--";
+        renderDashboardData(data, {
+          loadedFromCache,
+          effectiveSyncedAt,
+          effectiveSyncLogId
+        });
         addDebugLog("INFO", "loadData done", {
           loadedFromCache,
           elapsedMs: Math.round(performance.now() - t0)
