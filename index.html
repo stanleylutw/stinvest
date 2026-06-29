@@ -1160,7 +1160,7 @@
       }
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div id="settingsBackdrop" class="settings-backdrop" aria-hidden="true"></div>
@@ -1426,6 +1426,7 @@
       : `${PROD_API_BASE}/auth/google`;
     const REFRESH_MS = 60 * 1000;
     const AUTO_SYNC_MS = 3 * 60 * 1000;
+    const STALE_CACHE_MS = 10 * 60 * 1000;
     const SYNC_MODE_KEY_PREFIX = "stinvest_sync_mode_";
 
     const statusText = document.getElementById("statusText");
@@ -1505,9 +1506,9 @@
     let currentUserId = "";
     let currentLinkedSheetRowId = "";
     let appStartupPromise = null;
-    const supabaseClient = SUPABASE_LOGIN_ENABLED
-      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-      : null;
+    let supabaseClient = null;
+    let cachedSupabaseToken = "";
+    let cachedSupabaseTokenExpiresAt = 0;
     const MONEY_MASK_TEXT = "*****";
     const DEBUG_LOG_LIMIT = 500;
     const debugLogs = [];
@@ -2469,12 +2470,16 @@
       lastRefreshTriggeredAt = now;
       addDebugLog("INFO", "triggerImmediateRefresh start", { force, withSync });
 
-      // UX first: show cached data immediately, then sync in background.
-      await loadData();
+      // UX first: show cached data immediately, then sync in background only when stale.
+      const loadResult = await loadData();
+      const syncedAtMs = loadResult?.effectiveSyncedAt ? new Date(loadResult.effectiveSyncedAt).getTime() : NaN;
+      const cacheAgeMs = Number.isFinite(syncedAtMs) ? Date.now() - syncedAtMs : Infinity;
 
-      if (withSync && currentUserId && currentLinkedSheetRowId && !googleReconnectRequired) {
-        addDebugLog("INFO", "triggerImmediateRefresh background sync requested");
+      if (withSync && currentUserId && currentLinkedSheetRowId && !googleReconnectRequired && cacheAgeMs > STALE_CACHE_MS) {
+        addDebugLog("INFO", "triggerImmediateRefresh background sync requested", { cacheAgeMs });
         syncNow({ fromAuto: true });
+      } else if (withSync) {
+        addDebugLog("INFO", "triggerImmediateRefresh background sync skipped", { cacheAgeMs });
       }
       addDebugLog("INFO", "triggerImmediateRefresh done", { elapsedMs: Math.round(performance.now() - t0) });
     }
@@ -2568,11 +2573,32 @@
       addDebugLog(isError ? "ERROR" : "INFO", "sync status", { message, isError });
     }
 
+    function initSupabaseClient() {
+      if (supabaseClient || !SUPABASE_LOGIN_ENABLED) return supabaseClient;
+      if (!window.supabase?.createClient) {
+        addDebugLog("ERROR", "Supabase SDK not ready");
+        return null;
+      }
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      return supabaseClient;
+    }
+
+    function cacheSupabaseSession(session) {
+      cachedSupabaseToken = session?.access_token || "";
+      cachedSupabaseTokenExpiresAt = Number(session?.expires_at || 0);
+    }
+
+    function isCachedSupabaseTokenFresh() {
+      return !!cachedSupabaseToken && cachedSupabaseTokenExpiresAt > Math.floor(Date.now() / 1000) + 60;
+    }
+
     async function getSupabaseAccessToken() {
       if (!supabaseClient) return "";
+      if (isCachedSupabaseTokenFresh()) return cachedSupabaseToken;
       const {
         data: { session }
       } = await supabaseClient.auth.getSession();
+      cacheSupabaseSession(session);
       return session?.access_token || "";
     }
 
@@ -2598,6 +2624,7 @@
           data: { session }
         } = await supabaseClient.auth.getSession();
         if (session) {
+          cacheSupabaseSession(session);
           if (attempt > 0) {
             addDebugLog("INFO", "Supabase session became ready after retry", { attempt });
           }
@@ -3131,10 +3158,12 @@
       btnUnbindSheet.disabled = true;
       syncModeSelect.disabled = false;
       sheetUrlInput.disabled = false;
-      await loadLinkedSheet(currentUserId);
       const savedMode = localStorage.getItem(syncModeStorageKey(currentUserId)) || "manual";
       setSyncMode(savedMode, { persist: false });
-      await loadCloudSettings(currentUserId);
+      await Promise.all([
+        loadLinkedSheet(currentUserId),
+        loadCloudSettings(currentUserId)
+      ]);
       setAppLocked(false);
       addDebugLog("INFO", "ensureSupabaseAuth done", {
         userId: currentUserId,
@@ -3182,6 +3211,7 @@
           userId: session?.user?.id || ""
         });
         if (event === "SIGNED_OUT") {
+          cacheSupabaseSession(null);
           currentUserId = "";
           currentLinkedSheetRowId = "";
           clearDashboardForUnlinkedSheet();
@@ -3190,6 +3220,7 @@
           return;
         }
         if (session?.user?.id && ["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED"].includes(event)) {
+          cacheSupabaseSession(session);
           setTimeout(() => {
             startAppDataFlow(`auth:${event}`, { force: event === "SIGNED_IN", withSync: event !== "TOKEN_REFRESHED" });
           }, 0);
@@ -3212,6 +3243,24 @@
     function clearAuthRedirectFlags() {
       sessionStorage.removeItem(AUTH_REDIRECT_TRIED_KEY);
       sessionStorage.removeItem(AUTH_REDIRECT_AT_KEY);
+    }
+
+    function getCachedPortfolioUrl() {
+      if (!currentLinkedSheetRowId) return API_CACHED_URL;
+      const joiner = API_CACHED_URL.includes("?") ? "&" : "?";
+      return `${API_CACHED_URL}${joiner}sheet_id=${encodeURIComponent(currentLinkedSheetRowId)}`;
+    }
+
+    function formatRelativeSyncAge(value) {
+      const ts = value ? new Date(value).getTime() : NaN;
+      if (!Number.isFinite(ts)) return "";
+      const diffMs = Math.max(0, Date.now() - ts);
+      const minutes = Math.floor(diffMs / 60000);
+      if (minutes < 1) return "剛剛";
+      if (minutes < 60) return `約 ${minutes} 分鐘前`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `約 ${hours} 小時前`;
+      return `約 ${Math.floor(hours / 24)} 天前`;
     }
 
     function renderDashboardData(data, {
@@ -3254,7 +3303,7 @@
       renderHoldings(holdings, groupSummaries);
       statusText.textContent = loadedFromCache ? "已更新（快取）" : "已更新";
       updatedAt.textContent = effectiveSyncedAt
-        ? new Date(effectiveSyncedAt).toLocaleString("zh-TW")
+        ? `${new Date(effectiveSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(effectiveSyncedAt)}）`
         : "--";
     }
 
@@ -3275,7 +3324,7 @@
           sbAccessToken = await getSupabaseAccessToken();
           if (sbAccessToken) {
             const cacheT0 = performance.now();
-            const cacheRes = await fetch(API_CACHED_URL, {
+            const cacheRes = await fetch(getCachedPortfolioUrl(), {
               cache: "no-store",
               headers: {
                 Authorization: `Bearer ${sbAccessToken}`
@@ -3385,6 +3434,7 @@
           loadedFromCache,
           elapsedMs: Math.round(performance.now() - t0)
         });
+        return { ok: true, effectiveSyncedAt, loadedFromCache };
       } catch (err) {
         console.error(err);
         addDebugLog("ERROR", "loadData failed", {
@@ -3408,6 +3458,7 @@
         } else {
           statusText.textContent = "更新失敗";
         }
+        return { ok: false, effectiveSyncedAt: "", loadedFromCache: false };
       } finally {
         setRefreshingUI(false);
       }
@@ -3505,15 +3556,16 @@
       }
     });
 
-    (async () => {
+    document.addEventListener("DOMContentLoaded", async () => {
       addDebugLog("INFO", "app bootstrap start");
+      initSupabaseClient();
       setupSupabaseAuthListener();
       setSettingsOpen(false);
       applyMoneyMaskUI();
       setSyncMode("manual", { persist: false });
-      await startAppDataFlow("bootstrap", { force: true, withSync: true });
+      await startAppDataFlow("bootstrap", { force: true, withSync: false });
       addDebugLog("INFO", "app bootstrap done");
-    })();
+    });
   </script>
 </body>
 </html>

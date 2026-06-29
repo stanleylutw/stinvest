@@ -710,10 +710,21 @@ app.get("/api/portfolio-cached", async (req, res) => {
     const userId = user?.id;
     if (!userId) throw new Error("Invalid Supabase user");
 
-    const linkedRows = await supabaseRequest(
-      `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
-    );
-    const linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+    const requestedSheetId = typeof req.query.sheet_id === "string" ? req.query.sheet_id.trim() : "";
+    let linkedSheet = null;
+
+    if (requestedSheetId) {
+      const linkedRows = await supabaseRequest(
+        `/rest/v1/user_sheets?id=eq.${encodeURIComponent(requestedSheetId)}&user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&limit=1&select=id,spreadsheet_id`
+      );
+      linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+    } else {
+      const linkedRows = await supabaseRequest(
+        `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
+      );
+      linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+    }
+
     if (!linkedSheet?.spreadsheet_id) {
       return res.status(400).json({
         error: "NoLinkedSheet",
