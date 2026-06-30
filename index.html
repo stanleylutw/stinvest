@@ -2081,7 +2081,7 @@
         wrap?.getBoundingClientRect().width ||
         0
       );
-      const w = measuredWidth || 760;
+      const w = Math.max(760, measuredWidth);
       const h = Math.min(460, Math.max(300, Math.round(w * 0.28)));
       const m = { l: 74, r: 74, t: 16, b: 44 };
       const pw = w - m.l - m.r;
@@ -2244,7 +2244,7 @@
         wrap?.getBoundingClientRect().width ||
         0
       );
-      const chartW = measuredWidth || 720;
+      const chartW = Math.max(720, measuredWidth);
       const chartH = Math.min(460, Math.max(290, Math.round(chartW * 0.24)));
       const plotH = chartH - margin.top - margin.bottom;
       const plotW = chartW - margin.left - margin.right;

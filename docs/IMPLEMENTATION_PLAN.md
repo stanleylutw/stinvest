@@ -1,143 +1,75 @@
-# IMPLEMENTATION_PLAN — 歷史趨勢圖視覺優化
+# IMPLEMENTATION_PLAN — 修正手機直向圖表文字重疊（回歸問題）
 
-Last updated: 2026-06-30 00:00:00 [Claude]
+Last updated: 2026-06-30 00:30:00 [Claude]
 
 ## Branch
 
 Before starting implementation, create and switch to the new branch:
 
 ```
-git checkout -b polish_history_trend_chart
+git checkout -b fix_mobile_chart_label_overlap
 ```
 
-Base branch: `_supabase`（請確認已包含先前 `fix_mobile_chart_blank_space` 的 commit）
+Base branch: `main`
 
 ---
 
 ## 1. 背景
 
-「歷史報酬率趨勢」折線圖目前每個資料點都畫一個小圓點，資料量大時看起來雜亂。使用者要求：
-1. 拿掉沿途所有的點，只畫純折線。
-2. 只在「數值最高的那個點」保留標記（marker + 數值標籤），而不是固定畫最後一點。
-3. 整體視覺更專業：折線下方加漸層填色（area chart 效果）。
+上次修復「手機直向圖表下方留白」（branch `fix_mobile_chart_blank_space`）時，將 `renderHistoryTrendChart` 與 `renderDistribution` 內的圖表寬度計算，由 `Math.max(N, measuredWidth)` 改成 `measuredWidth || N`。
 
-## 2. 修改範圍（僅限 `index.html`，函式 `renderHistoryTrendChart`，不得修改其他函式或檔案）
+這個改動在桌面寬螢幕沒有副作用，但在手機直向（容器寬度約 350px）時，造成 SVG 內部繪圖座標系統（viewBox）也跟著縮到 350，而文字 `font-size` 是寫死的絕對數值不會跟著縮小，導致：
+- 「投資分布圖」X 軸的 8 個分類名稱、漲跌幅標籤全部重疊。
+- 「歷史報酬率趨勢」X 軸的日期標籤全部重疊。
 
-### 2.1 移除沿途所有資料點的圓點
+## 2. 修改範圍（僅限 `index.html`，以下兩處，不得修改其他任何程式碼）
 
-找到 `points` 這個 helper function：
+### 2.1 `renderHistoryTrendChart`
 
+找到：
 ```js
-const points = (key, yFn, color) => valid.map((p, i) => {
-  const v = p[key];
-  if (!Number.isFinite(v)) return "";
-  return `<circle cx="${xAt(i)}" cy="${yFn(v)}" r="2.8" fill="${color}" />`;
-}).join("");
+const w = measuredWidth || 760;
+```
+改回：
+```js
+const w = Math.max(760, measuredWidth);
 ```
 
-以及它在 SVG 模板中的呼叫：
+### 2.2 `renderDistribution`
 
+找到：
 ```js
-${showY1 ? points("y1", yAt1, "#2563eb") : ""}
-${showY2 ? points("y2", yAt2, "#64748b") : ""}
+const chartW = measuredWidth || 720;
+```
+改回：
+```js
+const chartW = Math.max(720, measuredWidth);
 ```
 
-→ 整段移除（function 定義 + 兩處呼叫）。不要保留沿途逐點圓點繪製。
+## 3. 為什麼這樣改不會讓「留白問題」再次出現
 
-### 2.2 找出最高值的點，並只在該點畫 marker + 數值標籤
+留白問題（UI-1）的根因是 CSS `.dist-chart` / `.history-trend-chart` 的固定 `min-height`，與「上一輪」已經移除，這次完全不動 CSS，繼續保留移除狀態。
 
-在 `pathFrom` 定義之後、SVG 模板字串之前，新增一個 helper，找出 Y1 與 Y2 各自的最高值點（peak）：
+本次只回復 JS 的寬度計算邏輯。SVG 用 `width:100%; height:auto`（CSS 既有規則）搭配固定的內部 viewBox 比例，瀏覽器會自動等比例縮放整個 SVG（含文字）去貼合容器寬度，文字之間的「相對比例」維持不變，不會重疊；容器高度也會跟著等比縮小，因為沒有 `min-height` 卡住，所以不會留白。
 
-```js
-const findPeak = (key, yFn) => {
-  let best = null;
-  valid.forEach((p, i) => {
-    const v = p[key];
-    if (!Number.isFinite(v)) return;
-    if (!best || v > best.v) best = { v, i, x: xAt(i), y: yFn(v) };
-  });
-  return best;
-};
-const y1Peak = showY1 ? findPeak("y1", yAt1) : null;
-const y2Peak = showY2 ? findPeak("y2", yAt2) : null;
+## 4. 不得進行的修改
 
-const peakMarker = (peak, color, def) => {
-  if (!peak) return "";
-  return `
-    <circle cx="${peak.x}" cy="${peak.y}" r="4" fill="#fff" stroke="${color}" stroke-width="2" />
-    <text x="${peak.x}" y="${peak.y - 10}" text-anchor="middle" font-size="11" fill="${color}" font-weight="700">${formatAxisValue(peak.v, def.axis)}</text>
-  `;
-};
-```
+- 不得修改 CSS（`.dist-chart`、`.history-trend-chart` 的 `min-height` 移除狀態必須維持不動，不要加回去）。
+- 不得修改上一輪「歷史趨勢圖視覺優化」新增的邏輯（`findPeak`、`peakMarker`、`areaPath`、漸層 `<linearGradient>`）。
+- 不得修改其他任何函式或檔案。
+- **不要再嘗試把寬度計算改成跟隨 `measuredWidth` 縮放** — 這正是本次要修復的回歸問題的根源，未來如果要再優化圖表寬度邏輯，必須同時驗證手機直向下文字是否重疊，不能只看是否留白。
 
-注意：
-- `formatAxisValue` 與 `def`（`y1Def`/`y2Def`）在這個函式作用域內已存在，直接重用，不要新增重複的格式化邏輯。
-- peak marker 的圓點樣式（白底、彩色描邊）刻意與原本沿途的實心小圓點不同，作為「峰值標記」的視覺區隔。
+## 5. 驗證方式
 
-### 2.3 在 SVG 模板中插入 peak marker，並加入折線下方漸層填色
+1. 啟動本地 server：`node server.js`，開啟 `http://localhost:3000`，登入後檢視「投資分布圖」與「歷史報酬率趨勢」卡片。
+2. 用瀏覽器 DevTools 切換成手機尺寸（375px 寬），確認：
+   - 「投資分布圖」X 軸的分類名稱（台股ETF、台股個股...）彼此不重疊，可清楚辨識。
+   - 漲跌幅標籤（▲/▼ 百分比）不重疊。
+   - 「歷史報酬率趨勢」X 軸日期標籤不重疊。
+   - 兩張圖表下方都沒有恢復出現大片空白（確認沒有讓 UI-1 復發）。
+3. 切回桌面寬螢幕尺寸，確認顯示效果與優化後版本一致（無 regression）。
+4. 檢查瀏覽器 console 沒有新增的 JS 錯誤。
 
-**漸層填色（area chart）**：在 `<svg ...>` 開頭新增 `<defs>` 定義線性漸層，並在折線 `<path>` 之前，新增一個「面積路徑」（折線路徑 + 沿著底部 baseline 封閉），只對 Y1（主要序列，藍色）做漸層填色，Y2 不需要。
-
-封閉面積路徑可以用既有的 `p1` 折線路徑字串組出：
-
-```js
-const areaPath = showY1 && p1
-  ? `${p1} L ${xAt(valid.length - 1)} ${m.t + ph} L ${xAt(0)} ${m.t + ph} Z`
-  : "";
-```
-
-SVG 模板調整為（在現有結構基礎上插入，不要重寫整個 SVG 字串）：
-
-```js
-historyTrendChart.innerHTML = `
-  <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="historyAreaGradient" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#2563eb" stop-opacity="0.18" />
-        <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
-      </linearGradient>
-    </defs>
-    <rect x="0" y="0" width="${w}" height="${h}" fill="#f7f8fa" />
-    ${grid}
-    ${areaPath ? `<path d="${areaPath}" fill="url(#historyAreaGradient)" stroke="none" />` : ""}
-    ${showY1 ? `<path d="${p1}" fill="none" stroke="#2563eb" stroke-width="2.2" />` : ""}
-    ${showY2 ? `<path d="${p2}" fill="none" stroke="#64748b" stroke-width="2.2" />` : ""}
-    ${y1Peak ? peakMarker(y1Peak, "#2563eb", y1Def) : ""}
-    ${y2Peak ? peakMarker(y2Peak, "#64748b", y2Def) : ""}
-    <line x1="${m.l}" y1="${m.t + ph}" x2="${w - m.r}" y2="${m.t + ph}" stroke="#64748b" stroke-width="1.3" />
-    ${xLabels}
-    ${showY1 ? `<text x="${m.l}" y="${13}" text-anchor="start" font-size="11" fill="#2563eb" font-weight="700">${formatMetricLabel(y1Def)}</text>` : ""}
-    ${showY2 ? `<text x="${w - m.r}" y="${13}" text-anchor="end" font-size="11" fill="#64748b" font-weight="700">${formatMetricLabel(y2Def)}</text>` : ""}
-  </svg>
-`;
-```
-
-`<linearGradient>` 的 `id="historyAreaGradient"` 若該 SVG 在同一頁面只會出現一次（目前架構是如此，整頁只有一個 `#historyTrendChart` 容器），可以固定 id，不需要動態產生唯一 id。
-
-### 2.4 圖表副標題/圖例維持不變
-
-`formatMetricLabel(y1Def)` / `formatMetricLabel(y2Def)` 的左上、右上文字標籤邏輯不變，不要修改。
-
-## 3. 不得進行的修改
-
-- 不得修改 `renderDistribution`（分布圖）或其他函式。
-- 不得修改 `xAt`、`yAt1`、`yAt2`、`range`、`pathFrom` 既有計算邏輯。
-- 不得新增任何外部套件依賴（純手寫 SVG，沿用現有風格）。
-- 若 Y1 或 Y2 的 `valid` 資料只有 1 個點，`findPeak` 仍需正常運作（不可拋錯）。
-- peak marker 文字標籤若超出圖表上邊界（例如最高點剛好在圖表頂部），可以不處理 clipping，但若有簡單作法（例如 `Math.max(peak.y - 10, m.t + 12)` 限制文字 y 座標下限）可以順手加上，非必須。
-
-## 4. 驗證方式
-
-1. 啟動本地 server：`node server.js`，開啟 `http://localhost:3000`，登入後檢視「歷史報酬率趨勢」卡片。
-2. 確認：
-   - 折線上不再有沿途密集小圓點。
-   - 只有數值最高的那一點有圓點標記 + 數值文字。
-   - 折線下方出現淡藍色漸層填色，往下漸淡至透明。
-   - 切換 Y2 下拉選單（例如選一個非「無」的序列），確認 Y2 也只在峰值處有標記，且 Y2 不畫漸層填色。
-   - 切換「範圍」篩選（例如只看近 3 個月），peak marker 會跟著重新計算到篩選後資料的最高點。
-3. 檢查瀏覽器 console 沒有新增的 JS 錯誤。
-4. 確認手機直向尺寸下（DevTools 375px 寬）顯示正常，與上次 `fix_mobile_chart_blank_space` 的修復沒有衝突（圖表下方不應該又出現空白）。
-
-## 5. 完成後
+## 6. 完成後
 
 請將 diff 回報給 Claude Code 進行 Step 5 review。

@@ -1,8 +1,8 @@
-# REVIEW_REPORT — polish_history_trend_chart
+# REVIEW_REPORT — fix_mobile_chart_label_overlap
 
-Last updated: 2026-06-30 00:20:00 [Claude]
+Last updated: 2026-06-30 00:40:00 [Claude]
 
-Reviewed branch: `polish_history_trend_chart`
+Reviewed branch: `fix_mobile_chart_label_overlap`
 Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 
 ## 結論
@@ -11,15 +11,14 @@ Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 
 ## Diff 範圍檢查
 
-僅修改 `index.html` 的 `renderHistoryTrendChart` 函式：
+僅修改 `index.html` 兩處，皆與 plan 完全一致：
 
-1. 移除 `points()` helper 與兩處呼叫（沿途圓點） ✅
-2. 新增 `findPeak()`，正確處理空值（`Number.isFinite` 防護），Y1/Y2 各自獨立計算峰值 ✅
-3. 新增 `peakMarker()`，白底彩色描邊圓點 + 數值標籤，且主動加上 `Math.max(peak.y - 10, m.t + 12)` 邊界保護（plan 中標註為非必須的加分項，Codex 有做） ✅
-4. 新增 `areaPath` + `<linearGradient id="historyAreaGradient">`，只對 Y1 做漸層填色，Y2 不填色，符合 plan 要求 ✅
-5. 未修改 `xAt`、`yAt1`、`yAt2`、`range`、`pathFrom`、`renderDistribution` 等範圍外邏輯 ✅
+1. `renderHistoryTrendChart`：`measuredWidth || 760` → `Math.max(760, measuredWidth)` ✅
+2. `renderDistribution`：`measuredWidth || 720` → `Math.max(720, measuredWidth)` ✅
 
-`docs/IMPLEMENTATION_PLAN.md` 的變動是 Claude 在上一輪覆寫的版本紀錄（同一輪對話內由 Claude Code 寫入，非本次 Codex 任務新增的修改），不構成「Codex 修改 plan MD」的違規。
+未動到 CSS（`.dist-chart` / `.history-trend-chart` 的 `min-height` 移除狀態維持），未動到上一輪新增的 `findPeak`、`peakMarker`、`areaPath`、`historyAreaGradient`，符合 plan 邊界要求。
+
+`docs/IMPLEMENTATION_PLAN.md` 的 diff 是 Claude 上一輪寫入的版本，非 Codex 本次新增修改。
 
 ## Issue 分類
 
@@ -31,9 +30,9 @@ Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 
 ## 驗證確認
 
-- Codex 回報：`git diff --check` 通過、抽取 inline script 後 `node --check` 通過語法檢查、本機 console 無新增 error。
-- 因本機未登入 Supabase，無法用真實同步資料完整目視驗證峰值標記與漸層填色的最終視覺效果；但程式邏輯與語法層面已驗證無誤，且與 plan 規格一致。
-- 建議使用者登入後在瀏覽器實機確認一次峰值位置是否符合預期（尤其是切換 Y2 / 範圍篩選後）。
+- Codex 回報：`git diff --check`、`node --check server.js`、`node --check` inline script 均通過；本地 server 可啟動；手機寬度下 console 無新增 error；computed `min-height` 仍為 `0px`（確認沒有讓 UI-1 留白問題復發）。
+- 因本機未登入，無法用真實同步資料目視驗證文字不重疊；但此次只是兩行數值回滾，邏輯與先前驗證過的版本（`fix_mobile_chart_blank_space` 之前）完全相同，可信度高。
+- 建議使用者登入後在手機尺寸下做一次目視確認。
 
 ## 後續
 
