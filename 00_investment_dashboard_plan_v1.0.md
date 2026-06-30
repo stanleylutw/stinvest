@@ -1,6 +1,6 @@
 # ST投資總表 — Product & Architecture Plan
 
-Last updated: 2026-06-30 00:10:00 [Claude]
+Last updated: 2026-06-30 00:20:00 [Claude]
 
 ## Revision History
 
@@ -8,6 +8,7 @@ Last updated: 2026-06-30 00:10:00 [Claude]
 |---|---|---|---|---|
 | v1.0 | 2026-06-30 00:00:00 | Initial plan created from codebase scan; documents current architecture and known performance issues | Claude | N/A |
 | v1.1 | 2026-06-30 00:10:00 | Fixed mobile-portrait blank space below history trend chart and distribution chart (CSS min-height conflicting with auto-scaled SVG height) | Claude | fix_mobile_chart_blank_space |
+| v1.2 | 2026-06-30 00:20:00 | Polished history trend chart: removed per-point dots, added peak-value marker, added Y1 gradient area fill | Claude | polish_history_trend_chart |
 
 ---
 
@@ -100,7 +101,8 @@ index.html（前端 SPA，純 Vanilla JS）
 
 | 編號 | 問題 | 位置 | 狀態 |
 |---|---|---|---|
-| UI-1 | 手機直向時，「歷史報酬率趨勢」與「投資分布圖」卡片，SVG 圖表下方出現大片空白；根因為 CSS `min-height` 與依容器寬度等比縮放後的 SVG 實際高度不匹配 | `index.html` `.dist-chart` / `.history-trend-chart` / `renderHistoryTrendChart` / `renderDistribution` | ✅ 已修復（branch `fix_mobile_chart_blank_space`，詳見 `docs/IMPLEMENTATION_PLAN.md` 與 `docs/REVIEW_REPORT.md`） |
+| UI-1 | 手機直向時，「歷史報酬率趨勢」與「投資分布圖」卡片，SVG 圖表下方出現大片空白；根因為 CSS `min-height` 與依容器寬度等比縮放後的 SVG 實際高度不匹配 | `index.html` `.dist-chart` / `.history-trend-chart` / `renderHistoryTrendChart` / `renderDistribution` | ✅ 已修復（branch `fix_mobile_chart_blank_space`） |
+| UI-2 | 歷史趨勢圖沿途資料點過多，視覺雜亂；缺乏 area chart 漸層填色，不夠專業 | `index.html` `renderHistoryTrendChart` | ✅ 已修復：移除沿途圓點，只在數值最高點畫 marker，Y1 加漸層填色（branch `polish_history_trend_chart`） |
 
 ## 4. 待確認事項（需使用者澄清）
 

@@ -2124,6 +2124,30 @@
       };
       const p1 = showY1 ? pathFrom("y1", yAt1) : "";
       const p2 = showY2 ? pathFrom("y2", yAt2) : "";
+      const areaPath = showY1 && p1
+        ? `${p1} L ${xAt(valid.length - 1)} ${m.t + ph} L ${xAt(0)} ${m.t + ph} Z`
+        : "";
+
+      const findPeak = (key, yFn) => {
+        let best = null;
+        valid.forEach((p, i) => {
+          const v = p[key];
+          if (!Number.isFinite(v)) return;
+          if (!best || v > best.v) best = { v, i, x: xAt(i), y: yFn(v) };
+        });
+        return best;
+      };
+      const y1Peak = showY1 ? findPeak("y1", yAt1) : null;
+      const y2Peak = showY2 ? findPeak("y2", yAt2) : null;
+
+      const peakMarker = (peak, color, def) => {
+        if (!peak) return "";
+        const labelY = Math.max(peak.y - 10, m.t + 12);
+        return `
+          <circle cx="${peak.x}" cy="${peak.y}" r="4" fill="#fff" stroke="${color}" stroke-width="2" />
+          <text x="${peak.x}" y="${labelY}" text-anchor="middle" font-size="11" fill="${color}" font-weight="700">${formatAxisValue(peak.v, def.axis)}</text>
+        `;
+      };
 
       const yTicks = 5;
       const grid = Array.from({ length: yTicks + 1 }, (_, i) => {
@@ -2144,20 +2168,21 @@
         return `<text x="${xAt(i)}" y="${m.t + ph + 22}" text-anchor="middle" font-size="11" fill="#334155">${p.d}</text>`;
       }).join("");
 
-      const points = (key, yFn, color) => valid.map((p, i) => {
-        const v = p[key];
-        if (!Number.isFinite(v)) return "";
-        return `<circle cx="${xAt(i)}" cy="${yFn(v)}" r="2.8" fill="${color}" />`;
-      }).join("");
-
       historyTrendChart.innerHTML = `
         <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="historyAreaGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#2563eb" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+            </linearGradient>
+          </defs>
           <rect x="0" y="0" width="${w}" height="${h}" fill="#f7f8fa" />
           ${grid}
+          ${areaPath ? `<path d="${areaPath}" fill="url(#historyAreaGradient)" stroke="none" />` : ""}
           ${showY1 ? `<path d="${p1}" fill="none" stroke="#2563eb" stroke-width="2.2" />` : ""}
           ${showY2 ? `<path d="${p2}" fill="none" stroke="#64748b" stroke-width="2.2" />` : ""}
-          ${showY1 ? points("y1", yAt1, "#2563eb") : ""}
-          ${showY2 ? points("y2", yAt2, "#64748b") : ""}
+          ${y1Peak ? peakMarker(y1Peak, "#2563eb", y1Def) : ""}
+          ${y2Peak ? peakMarker(y2Peak, "#64748b", y2Def) : ""}
           <line x1="${m.l}" y1="${m.t + ph}" x2="${w - m.r}" y2="${m.t + ph}" stroke="#64748b" stroke-width="1.3" />
           ${xLabels}
           ${showY1 ? `<text x="${m.l}" y="${13}" text-anchor="start" font-size="11" fill="#2563eb" font-weight="700">${formatMetricLabel(y1Def)}</text>` : ""}

@@ -1,8 +1,8 @@
-# REVIEW_REPORT — fix_mobile_chart_blank_space
+# REVIEW_REPORT — polish_history_trend_chart
 
-Last updated: 2026-06-30 00:00:00 [Claude]
+Last updated: 2026-06-30 00:20:00 [Claude]
 
-Reviewed branch: `fix_mobile_chart_blank_space`
+Reviewed branch: `polish_history_trend_chart`
 Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 
 ## 結論
@@ -11,14 +11,15 @@ Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 
 ## Diff 範圍檢查
 
-僅修改 `index.html`，共 4 處，與 plan 規定範圍完全一致：
+僅修改 `index.html` 的 `renderHistoryTrendChart` 函式：
 
-1. `.dist-chart` 移除 `min-height: 220px;` ✅
-2. `.history-trend-chart` 移除 `min-height: 260px;` ✅
-3. `renderHistoryTrendChart`：`const w = Math.max(760, measuredWidth);` → `const w = measuredWidth || 760;` ✅
-4. `renderDistribution`：`const chartW = Math.max(720, measuredWidth);` → `const chartW = measuredWidth || 720;` ✅
+1. 移除 `points()` helper 與兩處呼叫（沿途圓點） ✅
+2. 新增 `findPeak()`，正確處理空值（`Number.isFinite` 防護），Y1/Y2 各自獨立計算峰值 ✅
+3. 新增 `peakMarker()`，白底彩色描邊圓點 + 數值標籤，且主動加上 `Math.max(peak.y - 10, m.t + 12)` 邊界保護（plan 中標註為非必須的加分項，Codex 有做） ✅
+4. 新增 `areaPath` + `<linearGradient id="historyAreaGradient">`，只對 Y1 做漸層填色，Y2 不填色，符合 plan 要求 ✅
+5. 未修改 `xAt`、`yAt1`、`yAt2`、`range`、`pathFrom`、`renderDistribution` 等範圍外邏輯 ✅
 
-無其他檔案、其他 CSS class、繪圖邏輯被觸碰。
+`docs/IMPLEMENTATION_PLAN.md` 的變動是 Claude 在上一輪覆寫的版本紀錄（同一輪對話內由 Claude Code 寫入，非本次 Codex 任務新增的修改），不構成「Codex 修改 plan MD」的違規。
 
 ## Issue 分類
 
@@ -26,17 +27,13 @@ Reviewed against: `docs/IMPLEMENTATION_PLAN.md`
 |---|---|---|
 | Critical | 0 | 無 |
 | Major | 0 | 無 |
-| Minor | 1 | 見下方 |
-
-### Minor-1：`measuredWidth || 760` 在寬度極小（如 0~1px，元素剛掛載未渲染）時的邊界行為
-
-`getBoundingClientRect().width` 在某些時機（例如卡片仍是 `display:none` 折疊狀態）可能回傳 `0`，此時會 fallback 到 `760`/`720`，這與修改前 `Math.max(760, measuredWidth)` 在同樣情境下的行為一致（兩者結果相同），**不是本次修改引入的新風險**，純粹是既有行為延續。標記為 Minor 僅作記錄，不要求修正。
+| Minor | 0 | 無 |
 
 ## 驗證確認
 
-- Codex 回報：本地 server 可啟動、console 無新增 error、computed style 確認 min-height 已為 0px。
-- 因本機未登入 Supabase，無法用真實資料目視驗證手機直向下的最終視覺效果；但 plan 中診斷的根因（CSS min-height 與縮放後 SVG 高度不匹配）已直接移除，邏輯上問題已解決。
-- 建議使用者在瀏覽器實機/DevTools 手機尺寸下登入後再目視確認一次。
+- Codex 回報：`git diff --check` 通過、抽取 inline script 後 `node --check` 通過語法檢查、本機 console 無新增 error。
+- 因本機未登入 Supabase，無法用真實同步資料完整目視驗證峰值標記與漸層填色的最終視覺效果；但程式邏輯與語法層面已驗證無誤，且與 plan 規格一致。
+- 建議使用者登入後在瀏覽器實機確認一次峰值位置是否符合預期（尤其是切換 Y2 / 範圍篩選後）。
 
 ## 後續
 
