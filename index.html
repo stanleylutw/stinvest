@@ -1523,6 +1523,7 @@
     let currentLinkedSheetRowId = "";
     let appStartupPromise = null;
     let supabaseClient = null;
+    let realtimeChannel = null;
     let cachedSupabaseToken = "";
     let cachedSupabaseTokenExpiresAt = 0;
     const MONEY_MASK_TEXT = "*****";
@@ -2741,6 +2742,35 @@
       }
     }
 
+    function subscribeRealtimeUpdates(userId) {
+      if (!supabaseClient || !userId) return;
+      unsubscribeRealtimeUpdates();
+      realtimeChannel = supabaseClient
+        .channel(`portfolio-updates-${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "portfolio_items", filter: `user_id=eq.${userId}` },
+          () => {
+            loadData();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "sync_logs", filter: `user_id=eq.${userId}` },
+          () => {
+            loadData();
+          }
+        )
+        .subscribe();
+    }
+
+    function unsubscribeRealtimeUpdates() {
+      if (realtimeChannel && supabaseClient) {
+        supabaseClient.removeChannel(realtimeChannel);
+      }
+      realtimeChannel = null;
+    }
+
     async function saveCloudSettingsPatch(patch) {
       if (!supabaseClient || !currentUserId) return;
       const payload = {
@@ -3171,6 +3201,7 @@
       }
       const session = await getSupabaseSessionWithRetry();
       if (!session) {
+        unsubscribeRealtimeUpdates();
         currentUserId = "";
         currentLinkedSheetRowId = "";
         authUserText.textContent = "未登入";
@@ -3192,6 +3223,7 @@
         return false;
       }
       currentUserId = session.user?.id || "";
+      subscribeRealtimeUpdates(currentUserId);
       authUserText.textContent = session.user?.email || "已登入";
       btnLoginGoogle.style.display = "none";
       btnLogout.style.display = "inline-block";
@@ -3252,6 +3284,7 @@
           userId: session?.user?.id || ""
         });
         if (event === "SIGNED_OUT") {
+          unsubscribeRealtimeUpdates();
           cacheSupabaseSession(null);
           currentUserId = "";
           currentLinkedSheetRowId = "";

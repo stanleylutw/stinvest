@@ -20,6 +20,9 @@ const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const issuedApiTokens = new Map();
 const GOOGLE_LINK_STATE_TTL_MS = 1000 * 60 * 10;
 const pendingGoogleLinkStates = new Map();
+const BACKGROUND_SYNC_ENABLED = process.env.BACKGROUND_SYNC_ENABLED === "true";
+const BACKGROUND_SYNC_INTERVAL_MS = Number(process.env.BACKGROUND_SYNC_INTERVAL_MS || 30000);
+let backgroundSyncRunning = false;
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -448,6 +451,13 @@ async function getLatestCachedSyncLog(userId, sheetId) {
   return latest || null;
 }
 
+function computeSyncContentHash(valueRanges) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(valueRanges || []))
+    .digest("hex");
+}
+
 async function getLatestHistoryRefreshSyncLog(userId, sheetId) {
   const rows = await supabaseRequest(
     `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=20&select=source_ranges,finished_at`
@@ -771,7 +781,7 @@ app.get("/api/portfolio-cached", async (req, res) => {
   }
 });
 
-app.post("/api/sync", async (req, res) => {
+async function performSyncForUser(userId, { fast = false } = {}) {
   let syncLogId = "";
   const syncStartedAt = Date.now();
   const timings = [];
@@ -783,11 +793,8 @@ app.post("/api/sync", async (req, res) => {
       timings.push({ label, ms: Date.now() - stepStartedAt });
     }
   };
-  try {
-    const user = await measure("auth", () => requireSupabaseUser(req, res));
-    if (!user) return;
-    const userId = user?.id;
 
+  try {
     const sheetRows = await measure(
       "supabase:user_sheets.read",
       () => supabaseRequest(
@@ -796,13 +803,12 @@ app.post("/api/sync", async (req, res) => {
     );
     const linkedSheet = Array.isArray(sheetRows) && sheetRows.length ? sheetRows[0] : null;
     if (!linkedSheet?.spreadsheet_id) {
-      return res.status(400).json({
-        error: "NoLinkedSheet",
-        message: "Please bind Google Sheet URL first"
-      });
+      const error = new Error("Please bind Google Sheet URL first");
+      error.code = "NoLinkedSheet";
+      throw error;
     }
 
-    const wantsFastSync = req.body?.fast === true;
+    const wantsFastSync = fast === true;
     const cachedSyncLog = wantsFastSync
       ? await measure("supabase:sync_logs.latest_cache", () => getLatestCachedSyncLog(userId, linkedSheet.id))
       : null;
@@ -810,23 +816,6 @@ app.post("/api/sync", async (req, res) => {
     let syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
       ? FAST_SYNC_RANGES
       : DEFAULT_RANGES;
-
-    const logRows = await measure(
-      "supabase:sync_logs.create",
-      () => supabaseRequest("/rest/v1/sync_logs", {
-        method: "POST",
-        headers: { Prefer: "return=representation" },
-        body: {
-          user_id: userId,
-          sheet_id: linkedSheet.id,
-          spreadsheet_id: linkedSheet.spreadsheet_id,
-          status: "running",
-          started_at: new Date().toISOString(),
-          source_ranges: syncRanges
-        }
-      })
-    );
-    syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
 
     const fetchedSheetData = await measure(
       `google:sheets.batchGet:${syncRanges.length}`,
@@ -872,6 +861,61 @@ app.post("/api/sync", async (req, res) => {
         });
       }
     }
+
+    const latestSyncLog = cachedSyncLog || await measure(
+      "supabase:sync_logs.latest_cache",
+      () => getLatestCachedSyncLog(userId, linkedSheet.id)
+    );
+    const nextPayloadHash = computeSyncContentHash(sheetData.valueRanges);
+    const previousPayloadHash = latestSyncLog?.payload_json
+      ? computeSyncContentHash(latestSyncLog.payload_json.valueRanges)
+      : "";
+    const changed = !previousPayloadHash || nextPayloadHash !== previousPayloadHash;
+
+    if (!changed) {
+      const finishedAt = new Date().toISOString();
+      const totalMs = Date.now() - syncStartedAt;
+      console.info("Sync timing", {
+        userId,
+        sheetId: linkedSheet.id,
+        fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
+        changed,
+        totalMs,
+        timings
+      });
+      return {
+        ok: true,
+        userId,
+        sheetId: linkedSheet.id,
+        spreadsheetId: linkedSheet.spreadsheet_id,
+        syncLogId: null,
+        syncedRows: 0,
+        fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
+        sourceRanges: syncRanges,
+        finishedAt,
+        totalMs,
+        timings,
+        data: sheetData,
+        changed
+      };
+    }
+
+    const logRows = await measure(
+      "supabase:sync_logs.create",
+      () => supabaseRequest("/rest/v1/sync_logs", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: {
+          user_id: userId,
+          sheet_id: linkedSheet.id,
+          spreadsheet_id: linkedSheet.spreadsheet_id,
+          status: "running",
+          started_at: new Date().toISOString(),
+          source_ranges: syncRanges
+        }
+      })
+    );
+    syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
 
     const items = buildPortfolioItemsFromSheet(sheetData.valueRanges, {
       userId,
@@ -938,11 +982,12 @@ app.post("/api/sync", async (req, res) => {
       userId,
       sheetId: linkedSheet.id,
       fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
+      changed,
       totalMs,
       timings
     });
 
-    return res.json({
+    return {
       ok: true,
       userId,
       sheetId: linkedSheet.id,
@@ -954,16 +999,10 @@ app.post("/api/sync", async (req, res) => {
       finishedAt,
       totalMs,
       timings,
-      data: sheetData
-    });
+      data: sheetData,
+      changed
+    };
   } catch (error) {
-    console.error("Sync error:", error);
-    if (error?.code === "GoogleNotLinked" || isGoogleReauthError(error)) {
-      return res.status(401).json({
-        error: "GoogleNotLinked",
-        message: "Google authorization expired. Please reconnect Google Sheets access."
-      });
-    }
     if (syncLogId) {
       try {
         await supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
@@ -978,7 +1017,32 @@ app.post("/api/sync", async (req, res) => {
         console.error("Sync log update failed:", logError);
       }
     }
+    throw error;
+  }
+}
 
+app.post("/api/sync", async (req, res) => {
+  try {
+    const user = await requireSupabaseUser(req, res);
+    if (!user) return;
+    const syncPayload = await performSyncForUser(user.id, {
+      fast: req.body?.fast === true
+    });
+    return res.json(syncPayload);
+  } catch (error) {
+    console.error("Sync error:", error);
+    if (error?.code === "GoogleNotLinked" || isGoogleReauthError(error)) {
+      return res.status(401).json({
+        error: "GoogleNotLinked",
+        message: "Google authorization expired. Please reconnect Google Sheets access."
+      });
+    }
+    if (error?.code === "NoLinkedSheet") {
+      return res.status(400).json({
+        error: "NoLinkedSheet",
+        message: error.message
+      });
+    }
     return res.status(500).json({
       error: "SyncFailed",
       message: error.message
@@ -1033,6 +1097,40 @@ app.post("/api/unbind", async (req, res) => {
   }
 });
 
+async function runBackgroundSyncTick() {
+  if (backgroundSyncRunning) return;
+  backgroundSyncRunning = true;
+  try {
+    const rows = await supabaseRequest(
+      "/rest/v1/user_sheets?is_active=eq.true&select=user_id"
+    );
+    const userIds = [
+      ...new Set(
+        (Array.isArray(rows) ? rows : [])
+          .map((row) => row?.user_id)
+          .filter(Boolean)
+      )
+    ];
+    for (const userId of userIds) {
+      try {
+        await performSyncForUser(userId, { fast: true });
+      } catch (error) {
+        console.error("Background sync user failed:", {
+          userId,
+          message: error?.message || String(error)
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Background sync tick failed:", error);
+  } finally {
+    backgroundSyncRunning = false;
+  }
+}
+
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
+  if (BACKGROUND_SYNC_ENABLED) {
+    setInterval(runBackgroundSyncTick, BACKGROUND_SYNC_INTERVAL_MS);
+  }
 });

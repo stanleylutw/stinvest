@@ -1,6 +1,6 @@
 # ST投資總表 — Product & Architecture Plan
 
-Last updated: 2026-06-30 00:40:00 [Claude]
+Last updated: 2026-06-30 01:30:00 [Claude]
 
 ## Revision History
 
@@ -10,6 +10,8 @@ Last updated: 2026-06-30 00:40:00 [Claude]
 | v1.1 | 2026-06-30 00:10:00 | Fixed mobile-portrait blank space below history trend chart and distribution chart (CSS min-height conflicting with auto-scaled SVG height) | Claude | fix_mobile_chart_blank_space |
 | v1.2 | 2026-06-30 00:20:00 | Polished history trend chart: removed per-point dots, added peak-value marker, added Y1 gradient area fill | Claude | polish_history_trend_chart |
 | v1.3 | 2026-06-30 00:40:00 | Fixed regression from v1.1: mobile-portrait chart labels (x-axis categories/dates) were overlapping because chart width followed actual narrow viewport instead of a fixed internal resolution. Reverted to forced minimum width while keeping the min-height CSS fix | Claude | fix_mobile_chart_label_overlap |
+| v1.4 | 2026-06-30 01:00:00 | Confirmed background sync + Realtime push architecture decision (single-user, Supabase free tier, 30s background poll interval); added section 3.3 | Claude | N/A (decision only) |
+| v1.5 | 2026-06-30 01:30:00 | Implemented background sync (performSyncForUser, content-hash change detection, BACKGROUND_SYNC_ENABLED toggle) and Supabase Realtime push to frontend; default disabled pending hosting confirmation | Claude | bg_sync_realtime_push |
 
 ---
 
@@ -106,11 +108,36 @@ index.html（前端 SPA，純 Vanilla JS）
 | UI-2 | 歷史趨勢圖沿途資料點過多，視覺雜亂；缺乏 area chart 漸層填色，不夠專業 | `index.html` `renderHistoryTrendChart` | ✅ 已修復：移除沿途圓點，只在數值最高點畫 marker，Y1 加漸層填色（branch `polish_history_trend_chart`） |
 | UI-3 | （UI-1 修復引入的回歸）手機直向時，圖表寬度改用實際容器寬度計算，導致 SVG 內部座標系統縮小，但文字 `font-size` 為固定絕對值，造成 X 軸分類名稱、日期標籤、漲跌幅標籤全部重疊 | `index.html` `renderHistoryTrendChart` / `renderDistribution` | ✅ 已修復：寬度計算改回強制最小值 `Math.max(N, measuredWidth)`，同時保留 UI-1 的 CSS `min-height` 移除（branch `fix_mobile_chart_label_overlap`） |
 
+### 3.3 背景同步 + Realtime 推送架構（已實作，預設關閉）
+
+目前同步原本完全由前端觸發（開頁／按鈕／前景 auto-sync），沒有人開著頁面時資料不會更新。已與使用者討論、確認架構，並完成實作（branch `bg_sync_realtime_push`，已通過 Step 5 review）。
+
+**已確認決策：**
+
+| 項目 | 決策 |
+|---|---|
+| 使用者規模 | 單一使用者（僅本人） |
+| 即時推送機制 | Supabase Realtime（訂閱 `portfolio_items` / `sync_logs` 表變更） |
+| 後端背景輪詢頻率 | 30 秒（Claude 提議的預設值，使用者尚未推翻，可事後調整） |
+| 變更判斷方式 | **不**用 Google Drive `modifiedTime`（GOOGLEFINANCE 公式重算不會更新此欄位，不可靠）。改為固定週期直接重讀 Sheet，讀回後與快取做內容比對，僅在資料實際不同時才寫入 DB，避免無意義的 sync_logs 灌水 |
+| Supabase 免費方案可行性 | 已確認可行：Realtime 並發連線數／訊息數／DB 容量都遠低於免費額度上限；背景輪詢產生的持續 API 流量還能避免免費專案因閒置 7 天被自動 pause |
+| 後端部署方式 | 待確認是否為常駐 process（若會休眠，in-process 排程不可靠，需改用外部 cron 打內部端點） |
+
+**架構流程：** Google Sheet（含 GOOGLEFINANCE 公式）→ 後端背景排程定期 `batchGet` → 與快取比對（對最終 `sheetData.valueRanges` 做 hash，涵蓋持股／分布圖／歷史紀錄），有變化才寫入 Supabase（`sync_logs` + `portfolio_items`）→ Supabase Realtime 推送變更事件 → 前端訂閱並重新讀取 `/api/portfolio-cached` 更新畫面。前端既有的 60 秒輪詢（`REFRESH_MS`）保留作為 Realtime 斷線時的備援，未刪除。
+
+**實作細節：**
+- 後端核心同步邏輯已抽出為 `performSyncForUser(userId, { fast })`，`/api/sync` route 與背景排程共用同一份邏輯。
+- 背景排程由 `BACKGROUND_SYNC_ENABLED`（預設 `false`）與 `BACKGROUND_SYNC_INTERVAL_MS`（預設 `30000`）控制，**目前預設關閉**，待確認後端部署方式（是否常駐 process）後再決定是否開啟。
+- Supabase Realtime 需要使用者手動到 SQL editor 執行 `supabase/migration_enable_realtime.sql`，才能讓 `portfolio_items` / `sync_logs` 真正推送變更。
+- 已知 2 個 Minor 觀察點（詳見 `docs/REVIEW_REPORT.md`）：① 無變化時不更新 `user_sheets.last_synced_at`；② 無變化路徑下，同步早期失敗不會留下 `sync_logs` 失敗紀錄，只能查 server log。兩者皆為合理 trade-off，暫不要求修正。
+
+詳見 `docs/IMPLEMENTATION_PLAN.md` 與 `docs/REVIEW_REPORT.md`（branch `bg_sync_realtime_push`）。
+
 ## 4. 待確認事項（需使用者澄清）
 
-- 後端目前部署於哪個服務（Render / Railway / 其他）？是否為免費方案（會有冷啟動問題）？
+- 後端目前部署於哪個服務（Render / Railway / 其他）？是否為常駐 process（若會休眠，3.3 節的背景排程需改用外部 cron 打內部端點，而非目前的 in-process `setInterval`）？
 - 是否有自動化測試？目前掃描未發現測試腳本。
-- `_supabase` 是否為目前唯一的開發分支？未來是否會 merge 回 `main`？
+- `_supabase` 分支目前已與 `main` 同步，後續是否要保留／淘汰？
 
 ## 5. 下一步
 
