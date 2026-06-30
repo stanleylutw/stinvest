@@ -448,6 +448,17 @@ async function getLatestCachedSyncLog(userId, sheetId) {
   return latest || null;
 }
 
+async function getLatestHistoryRefreshSyncLog(userId, sheetId) {
+  const rows = await supabaseRequest(
+    `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=20&select=source_ranges,finished_at`
+  );
+  if (!Array.isArray(rows)) return null;
+  return rows.find((row) => {
+    const ranges = Array.isArray(row?.source_ranges) ? row.source_ranges : [];
+    return ranges.includes(HISTORY_RANGE);
+  }) || null;
+}
+
 function shouldRetryHistoryRefreshSoon(syncLog) {
   const finishedAt = syncLog?.finished_at ? Date.parse(syncLog.finished_at) : 0;
   const ranges = Array.isArray(syncLog?.source_ranges) ? syncLog.source_ranges : [];
@@ -834,7 +845,13 @@ app.post("/api/sync", async (req, res) => {
       const cachedHistoryDate = getLatestHistoryReportDateFromPayload(cachedPayload);
       const isHistoryStale = reportDate
         && sheetDateToNumber(cachedHistoryDate) < sheetDateToNumber(reportDate);
-      const canRetryHistoryRefresh = shouldRetryHistoryRefreshSoon(cachedSyncLog);
+      const latestHistoryRefreshSyncLog = isHistoryStale
+        ? await measure(
+          "supabase:sync_logs.latest_history_refresh",
+          () => getLatestHistoryRefreshSyncLog(userId, linkedSheet.id)
+        )
+        : null;
+      const canRetryHistoryRefresh = shouldRetryHistoryRefreshSoon(latestHistoryRefreshSyncLog);
       const shouldRefreshHistory = isHistoryStale && canRetryHistoryRefresh;
 
       if (shouldRefreshHistory) {
