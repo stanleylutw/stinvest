@@ -2115,7 +2115,7 @@
       const n = valid.length;
       const showY1 = y1Key !== "none";
       const showY2 = y2Key !== "none";
-      const m = { l: 74, r: showY2 ? 74 : 20, t: 16, b: 44 };
+      const m = { l: 74, r: showY2 ? 56 : 20, t: 16, b: 44 };
       const pw = w - m.l - m.r;
       const ph = h - m.t - m.b;
 
@@ -2187,13 +2187,24 @@
         return `
           <line x1="${m.l}" y1="${y}" x2="${w - m.r}" y2="${y}" stroke="#dde2ea" stroke-width="1" />
           <text x="${m.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#4b5563">${showY1 ? formatAxisValue(v1, y1Def.axis) : ""}</text>
-          <text x="${w - m.r + 10}" y="${y + 4}" text-anchor="start" font-size="11" fill="#4b5563">${showY2 ? formatAxisValue(v2, y2Def.axis) : ""}</text>
+          <text x="${w - 4}" y="${y + 4}" text-anchor="end" font-size="11" fill="#4b5563">${showY2 ? formatAxisValue(v2, y2Def.axis) : ""}</text>
         `;
       }).join("");
 
       const xStep = Math.max(1, Math.ceil(n / 8));
+      const xLabelIndexes = new Set();
+      for (let i = 0; i < n; i += xStep) xLabelIndexes.add(i);
+      xLabelIndexes.add(n - 1);
+      const xLabelSorted = [...xLabelIndexes].sort((a, b) => a - b);
+      if (xLabelSorted.length >= 2) {
+        const last = xLabelSorted[xLabelSorted.length - 1];
+        const secondLast = xLabelSorted[xLabelSorted.length - 2];
+        if (last - secondLast < xStep / 2) {
+          xLabelIndexes.delete(secondLast);
+        }
+      }
       const xLabels = valid.map((p, i) => {
-        if (i % xStep !== 0 && i !== n - 1) return "";
+        if (!xLabelIndexes.has(i)) return "";
         return `<text x="${xAt(i)}" y="${m.t + ph + 22}" text-anchor="middle" font-size="11" fill="#334155">${p.d}</text>`;
       }).join("");
 
