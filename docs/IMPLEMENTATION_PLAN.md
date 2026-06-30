@@ -1,137 +1,114 @@
-# IMPLEMENTATION_PLAN — 修正歷史趨勢圖選項列窄螢幕斷行
+# IMPLEMENTATION_PLAN — 選項列窄螢幕單行 + 趨勢圖右側留白
 
-Last updated: 2026-06-30 02:00:00 [Claude]
+Last updated: 2026-06-30 02:30:00 [Claude]
 
 ## Branch
 
 Before starting implementation, create and switch to the new branch:
 
 ```
-git checkout -b fix_history_tools_wrap
+git checkout -b polish_history_chart_layout
 ```
 
 Base branch: `main`
 
 ---
 
-## 1. 問題描述
+## 1. 背景
 
-「歷史報酬率趨勢」卡片上方的選項列（範圍／Y1／Y2）在窄螢幕時換行很奇怪：「Y2」這個文字標籤留在第一行，但它對應的 `<select>` 卻被擠到第二行單獨一行，視覺上像是斷掉、不成一組。
+兩個獨立問題，都在「歷史報酬率趨勢」卡片：
 
-## 2. 根因
+**問題 A：選項列窄螢幕仍然換行**
+上次（branch `fix_history_tools_wrap`）已修正「label 跟 select 分開換行」的醜陋斷裂，但手機窄螢幕下，「範圍」「Y1」「Y2」三組加起來的寬度仍然超過容器可用寬度，所以還是會換成兩行（只是現在換行换得比較整齊）。
 
-檔案：`index.html`
+**問題 B：折線圖右側留白過大**
+圖表的右側 margin（`m.r`）固定是 74px，這是為了預留「Y2 座標軸文字」的空間。但當使用者沒有選 Y2（`y2Key === "none"`，畫面上 Y2 顯示「無」）時，這 74px 完全沒有文字要畫，變成一塊純空白，導致折線圖看起來明顯沒有貼齊右邊界，視覺上很奇怪。
 
-1. `.history-tools select`（約在 1022-1029 行附近）沒有設定寬度，`<select>` 會被瀏覽器撐到「足以容納最長選項文字」的寬度（`HISTORY_METRIC_OPTIONS` 裡最長的是「含息報酬率」5 個字），導致即使目前選的是「無」這種短文字，選單本體仍然很寬。
-2. `.history-tools`（約在 1011-1020 行附近）使用 `flex-wrap: wrap`，但 `<label for="histY2Select">Y2</label>` 與 `<select id="histY2Select">` 是兩個獨立的 flex 子元素（[index.html:1384-1385](index.html:1384)），容器寬度不夠時兩者各自獨立換行，造成 label 留在上一行、select 被擠到下一行的斷裂感。
+## 2. 修改範圍（僅限 `index.html`，以下兩處，不得修改其他程式碼）
 
-## 3. 修改範圍（僅限 `index.html`，以下兩處，不得修改其他程式碼）
+### 2.1 問題 A：窄螢幕 media query，讓選項列縮小到能塞進一行
 
-### 3.1 CSS — 限制 select 寬度
-
-找到 `.history-tools select` 規則：
+在 `.history-tool-group` 規則（[index.html:1030-1035](index.html:1030) 附近，上次 `fix_history_tools_wrap` 新增的）之後，新增一個 media query：
 
 ```css
-.history-tools select {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.3rem 0.45rem;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
+@media (max-width: 480px) {
+  .history-tools select {
+    width: 76px;
+  }
+  .history-tools {
+    gap: 0.3rem;
+  }
+  .history-tool-group {
+    gap: 0.2rem;
+    font-size: 0.82rem;
+  }
 }
 ```
 
-新增一行固定寬度（其餘屬性不動）：
+數值說明：
+- `select` 寬度從 92px 縮到 76px（仍要能完整顯示「含息報酬率」5 個字，若實測會截斷，可微調到 80px，但不要超過 84px，否則塞不進一行）。
+- `.history-tools` 整體的 gap 縮小，減少組與組之間的間距。
+- `.history-tool-group` 內部 label 與 select 的間距也稍微縮小，字級略降一點（`0.82rem`），讓「範圍」「Y1」「Y2」三組文字都更省空間。
 
-```css
-.history-tools select {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.3rem 0.45rem;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  width: 92px;
-}
+斷點 `480px` 是建議值，涵蓋大多數手機直向寬度（375~430px 左右），不需要做更複雜的多階斷點。
+
+**驗證標準**：在 375px 寬度下，「範圍 [選單] Y1 [選單] Y2 [選單]」必須能在一行內完整顯示，不換行。如果加上以上數值仍然換行，可以再小幅調低 `select` 寬度（最低不要低於 68px，避免選項文字被裁切），但不要拿掉 label 文字或刪除任何既有元素。
+
+### 2.2 問題 B：折線圖右側 margin 依 Y2 是否顯示動態調整
+
+找到 `renderHistoryTrendChart` 函式內，目前的程式碼順序大致是：
+
+```js
+const w = Math.max(760, measuredWidth);
+const h = Math.min(460, Math.max(300, Math.round(w * 0.28)));
+const m = { l: 74, r: 74, t: 16, b: 44 };
+const pw = w - m.l - m.r;
+const ph = h - m.t - m.b;
+const n = valid.length;
+const showY1 = y1Key !== "none";
+const showY2 = y2Key !== "none";
 ```
 
-`width: 92px` 是建議值，要能完整顯示「含息報酬率」這種 5 字選項不被截斷即可（可以用瀏覽器實際測試微調，但不要超過 110px，避免又佔太多空間）。
+**問題**：`m` 在 `showY2` 被算出來「之前」就先定義了，所以沒辦法依照 `showY2` 決定 `m.r`。
 
-### 3.2 HTML — 把每組 label + select 包成一個不可拆開的單位
+**修改方式**：把 `showY1` / `showY2` 的計算，搬到 `m` 定義「之前」，然後讓 `m.r` 依 `showY2` 決定：
 
-找到（[index.html:1382-1385](index.html:1382)）：
-
-```html
-<label for="histY1Select">Y1</label>
-<select id="histY1Select"></select>
-<label for="histY2Select">Y2</label>
-<select id="histY2Select"></select>
+```js
+const w = Math.max(760, measuredWidth);
+const h = Math.min(460, Math.max(300, Math.round(w * 0.28)));
+const n = valid.length;
+const showY1 = y1Key !== "none";
+const showY2 = y2Key !== "none";
+const m = { l: 74, r: showY2 ? 74 : 20, t: 16, b: 44 };
+const pw = w - m.l - m.r;
+const ph = h - m.t - m.b;
 ```
 
-改成（用 `<span>` 把每組包起來，id 與既有 JS 綁定的元素 id 完全不變，只是多包一層容器）：
+數值說明：
+- `showY2` 為 `true` 時，維持原本的 74px（要預留 Y2 座標軸數字與圖例文字空間）。
+- `showY2` 為 `false` 時，縮到 20px（只留一點點呼吸空間，不要完全是 0，避免折線/資料點貼到邊界被裁切）。
 
-```html
-<span class="history-tool-group">
-  <label for="histY1Select">Y1</label>
-  <select id="histY1Select"></select>
-</span>
-<span class="history-tool-group">
-  <label for="histY2Select">Y2</label>
-  <select id="histY2Select"></select>
-</span>
-```
+**注意**：`n` 這行原本在 `showY1`/`showY2` 之後，搬動時保持它在 `pw`/`ph` 計算之前即可（它沒有依賴 `m`），不要把計算順序搞亂導致其他變數（`pw`、`ph`、`xAt`、`yAt1`、`yAt2`）拿到錯誤的 `m` 值。
 
-同樣的包裝邏輯，也套用到「範圍」那一組（[index.html:1369-1370](index.html:1369)）：
+## 3. 不得進行的修改
 
-```html
-<span class="history-tool-group">
-  <label for="histRangeSelect">範圍</label>
-  <select id="histRangeSelect">
-    <option value="all" selected>全部</option>
-    <option value="month">月</option>
-    <option value="quarter">季</option>
-    <option value="year">年</option>
-    <option value="custom">自訂</option>
-  </select>
-</span>
-```
+- 不得修改 `renderDistribution`（分布圖）或其他函式。
+- 不得修改 `m.l`（左側 margin，與 Y1 座標軸有關，必須保留）、`m.t`、`m.b`。
+- 不得修改 `findPeak`、`peakMarker`、`areaPath`、`historyAreaGradient` 等既有邏輯。
+- 不得新增外部套件依賴。
+- 2.1 的 media query 數值若實測需要微調，幅度限制如上述說明（select 寬度不低於 68px）。
 
-**不要包住** `<span class="history-custom-range is-hidden" id="histCustomRange">`，那是另一個獨立功能（自訂日期區間），保持原樣不動。
+## 4. 驗證方式
 
-### 3.3 CSS — 新增 `.history-tool-group` 樣式
-
-在 `.history-tools select` 規則之後，新增：
-
-```css
-.history-tool-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  white-space: nowrap;
-}
-```
-
-這讓每組「label + select」變成一個不可拆開的 flex item，`.history-tools` 的 `flex-wrap: wrap` 換行時，只會整組一起換到下一行，不會切在 label 跟 select 中間。
-
-## 4. 不得進行的修改
-
-- 不得修改任何 JS（`histRangeSelect`、`histY1Select`、`histY2Select` 等變數的查找與事件綁定邏輯完全不動，因為元素 id 沒有改變，只是多包一層 `<span>`）。
-- 不得修改 `.history-custom-range` 相關的顯示/隱藏邏輯。
-- 不得修改其他卡片（投資分布圖等）的版面。
-- `width` 數值若你測試後發現 92px 會截斷文字或太擠，可以微調（建議範圍 84px ~ 110px），但要確保「含息報酬率」完整顯示，不要被裁切。
-
-## 5. 驗證方式
-
-1. 啟動本地 server：`node server.js`，開啟 `http://localhost:3000`，登入後檢視「歷史報酬率趨勢」卡片上方的選項列。
-2. 用瀏覽器 DevTools 切換到較窄的寬度（例如 600px、375px），確認：
-   - 不會再出現「Y2」文字留在上一行、選單被擠到下一行單獨顯示的狀況。
-   - 如果空間不夠真的需要換行，應該是整組「Y2 + 下拉選單」一起換行，視覺上仍然成對。
-   - 三個下拉選單（範圍/Y1/Y2）寬度看起來一致、不會異常寬大。
-3. 切到桌面寬螢幕尺寸，確認原本一行排列的效果沒有被破壞。
-4. 切換 Y1/Y2 下拉選單的選項，確認圖表更新功能正常（沒有因為多包一層 `<span>` 而影響原本的 `addEventListener` 綁定）。
+1. 啟動本地 server：`node server.js`，開啟 `http://localhost:3000`，登入後檢視「歷史報酬率趨勢」卡片。
+2. 用瀏覽器 DevTools 切換到 375px 寬度：
+   - 確認「範圍／Y1／Y2」三組選項在**一行內**顯示完整，不換行。
+   - 確認 Y2 維持「無」時，折線圖右側不再有明顯大片空白，線條／資料點更貼近圖表右邊界。
+3. 把 Y2 切換成有值的選項（例如「現值」），確認：
+   - 右側 margin 恢復原本寬度，Y2 座標軸數字與右上角圖例文字正常顯示，沒有被裁切或重疊。
+4. 切回桌面寬螢幕尺寸，確認原本排列與圖表比例沒有被破壞（無 regression）。
 5. 檢查瀏覽器 console 沒有新增的 JS 錯誤。
 
-## 6. 完成後
+## 5. 完成後
 
 請將 diff 回報給 Claude Code 進行 Step 5 review。記得依照 comm.md 規則，輸出可複製貼上的完成摘要。

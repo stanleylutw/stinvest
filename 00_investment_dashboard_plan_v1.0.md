@@ -1,6 +1,6 @@
 # ST投資總表 — Product & Architecture Plan
 
-Last updated: 2026-06-30 02:10:00 [Claude]
+Last updated: 2026-06-30 03:00:00 [Claude]
 
 ## Revision History
 
@@ -11,6 +11,7 @@ Last updated: 2026-06-30 02:10:00 [Claude]
 | v1.2 | 2026-06-30 00:20:00 | Polished history trend chart: removed per-point dots, added peak-value marker, added Y1 gradient area fill | Claude | polish_history_trend_chart |
 | v1.3 | 2026-06-30 00:40:00 | Fixed regression from v1.1: mobile-portrait chart labels (x-axis categories/dates) were overlapping because chart width followed actual narrow viewport instead of a fixed internal resolution. Reverted to forced minimum width while keeping the min-height CSS fix | Claude | fix_mobile_chart_label_overlap |
 | v1.6 | 2026-06-30 02:10:00 | Fixed history trend chart's range/Y1/Y2 selector row awkwardly splitting label from its select on narrow screens; capped select width and grouped each label+select pair so they wrap as one unit | Claude | fix_history_tools_wrap |
+| v1.7 | 2026-06-30 03:00:00 | Added narrow-screen media query so the range/Y1/Y2 selector row fits on one line; made history trend chart's right margin shrink when Y2 series is not shown, removing the excess gap on the right side | Claude | polish_history_chart_layout |
 
 ---
 
@@ -107,6 +108,7 @@ index.html（前端 SPA，純 Vanilla JS）
 | UI-2 | 歷史趨勢圖沿途資料點過多，視覺雜亂；缺乏 area chart 漸層填色，不夠專業 | `index.html` `renderHistoryTrendChart` | ✅ 已修復：移除沿途圓點，只在數值最高點畫 marker，Y1 加漸層填色（branch `polish_history_trend_chart`） |
 | UI-3 | （UI-1 修復引入的回歸）手機直向時，圖表寬度改用實際容器寬度計算，導致 SVG 內部座標系統縮小，但文字 `font-size` 為固定絕對值，造成 X 軸分類名稱、日期標籤、漲跌幅標籤全部重疊 | `index.html` `renderHistoryTrendChart` / `renderDistribution` | ✅ 已修復：寬度計算改回強制最小值 `Math.max(N, measuredWidth)`，同時保留 UI-1 的 CSS `min-height` 移除（branch `fix_mobile_chart_label_overlap`） |
 | UI-4 | 「歷史報酬率趨勢」卡片的範圍／Y1／Y2 選項列窄螢幕時斷行很怪：`<select>` 無固定寬度被最長選項撐寬，且 label 與 select 是獨立 flex item，換行時會切在兩者中間 | `index.html` `.history-tools` / `.history-tools select` | ✅ 已修復：select 加固定寬度，label+select 包成 `.history-tool-group` 整組換行（branch `fix_history_tools_wrap`） |
+| UI-5 | UI-4 修復後選項列仍然會換行（窄螢幕總寬度不夠塞下三組），且折線圖右側 margin 固定 74px，Y2 未顯示時變成大片無意義空白 | `index.html` `.history-tools` / `renderHistoryTrendChart` | ✅ 已修復：新增 `@media (max-width:480px)` 縮小尺寸讓選項列一行顯示；`m.r` 依 `showY2` 動態調整（branch `polish_history_chart_layout`） |
 
 ## 4. 待確認事項（需使用者澄清）
 
