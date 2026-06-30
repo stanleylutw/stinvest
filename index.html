@@ -1026,6 +1026,14 @@
       background: #fff;
       color: var(--ink);
       font: inherit;
+      width: 92px;
+    }
+
+    .history-tool-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
     }
 
     .history-tools input[type="date"] {
@@ -1366,23 +1374,29 @@
       </div>
       <div class="collapsible-body">
         <div class="history-tools">
-          <label for="histRangeSelect">範圍</label>
-          <select id="histRangeSelect">
-            <option value="all" selected>全部</option>
-            <option value="month">月</option>
-            <option value="quarter">季</option>
-            <option value="year">年</option>
-            <option value="custom">自訂</option>
-          </select>
+          <span class="history-tool-group">
+            <label for="histRangeSelect">範圍</label>
+            <select id="histRangeSelect">
+              <option value="all" selected>全部</option>
+              <option value="month">月</option>
+              <option value="quarter">季</option>
+              <option value="year">年</option>
+              <option value="custom">自訂</option>
+            </select>
+          </span>
           <span class="history-custom-range is-hidden" id="histCustomRange">
             <input id="histFromDate" type="date" />
             <span>~</span>
             <input id="histToDate" type="date" />
           </span>
-          <label for="histY1Select">Y1</label>
-          <select id="histY1Select"></select>
-          <label for="histY2Select">Y2</label>
-          <select id="histY2Select"></select>
+          <span class="history-tool-group">
+            <label for="histY1Select">Y1</label>
+            <select id="histY1Select"></select>
+          </span>
+          <span class="history-tool-group">
+            <label for="histY2Select">Y2</label>
+            <select id="histY2Select"></select>
+          </span>
         </div>
         <div class="history-trend-wrap">
           <div class="history-trend-chart" id="historyTrendChart">載入中...</div>
