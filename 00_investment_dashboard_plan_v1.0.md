@@ -1,6 +1,6 @@
 # ST投資總表 — Product & Architecture Plan
 
-Last updated: 2026-06-30 03:50:00 [Claude]
+Last updated: 2026-07-02 00:00:00 [Claude]
 
 ## Revision History
 
@@ -13,6 +13,7 @@ Last updated: 2026-06-30 03:50:00 [Claude]
 | v1.6 | 2026-06-30 02:10:00 | Fixed history trend chart's range/Y1/Y2 selector row awkwardly splitting label from its select on narrow screens; capped select width and grouped each label+select pair so they wrap as one unit | Claude | fix_history_tools_wrap |
 | v1.7 | 2026-06-30 03:00:00 | Added narrow-screen media query so the range/Y1/Y2 selector row fits on one line; made history trend chart's right margin shrink when Y2 series is not shown, removing the excess gap on the right side | Claude | polish_history_chart_layout |
 | v1.8 | 2026-06-30 03:50:00 | Fixed x-axis date labels overlapping near the right edge on certain data-point counts; tightened right margin and right-aligned Y2 axis numbers to the chart edge when Y2 is shown, reducing wasted whitespace | Claude | fix_history_chart_label_gap |
+| v1.9 | 2026-07-02 00:00:00 | Changed sync strategy: always sync Google Sheets on page open; auto-sync every 5 minutes while page is kept open (was manual-only, 3-minute interval); reduced stale threshold to 30s so tab-focus also triggers sync unless just synced | Claude | feat_auto_sync_on_open |
 
 ---
 
@@ -78,6 +79,13 @@ index.html（前端 SPA，純 Vanilla JS）
 - **FULL**：拉取 3 個 range（含歷史紀錄 `09_歷史紀錄`）
 
 歷史資料有 30 分鐘冷卻窗口，避免重複刷新造成不必要的 Google API 呼叫。
+
+**同步策略（v1.9 起）：**
+- 開頁：立即觸發 Google Sheets sync（`withSync: true`），不等快取是否新鮮
+- 保持開啟：預設啟用自動同步（auto 模式），每 5 分鐘 sync 一次
+- 快取重讀（`loadData`）：每 60 秒從 Supabase 重讀並重繪（不打 Google API）
+- 重新回到頁面（tab focus / visibilitychange）：若距上次 sync > 30 秒則再 sync
+- GOOGLEFINANCE 本身更新頻率約 15～20 分鐘，5 分鐘 sync 間隔已足夠取到最新值
 
 ### 2.4 認證流程（三條路徑）
 

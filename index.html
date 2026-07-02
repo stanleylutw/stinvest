@@ -1470,8 +1470,8 @@
       ? "http://localhost:3000/auth/google"
       : `${PROD_API_BASE}/auth/google`;
     const REFRESH_MS = 60 * 1000;
-    const AUTO_SYNC_MS = 3 * 60 * 1000;
-    const STALE_CACHE_MS = 10 * 60 * 1000;
+    const AUTO_SYNC_MS = 5 * 60 * 1000;
+    const STALE_CACHE_MS = 30 * 1000;
     const SYNC_MODE_KEY_PREFIX = "stinvest_sync_mode_";
 
     const statusText = document.getElementById("statusText");
@@ -3643,8 +3643,8 @@
       setupSupabaseAuthListener();
       setSettingsOpen(false);
       applyMoneyMaskUI();
-      setSyncMode("manual", { persist: false });
-      await startAppDataFlow("bootstrap", { force: true, withSync: false });
+      setSyncMode("auto", { persist: false });
+      await startAppDataFlow("bootstrap", { force: true, withSync: true });
       addDebugLog("INFO", "app bootstrap done");
     });
   </script>
