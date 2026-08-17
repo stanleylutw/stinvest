@@ -3306,6 +3306,13 @@
         }
         if (session?.user?.id && ["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED"].includes(event)) {
           cacheSupabaseSession(session);
+          // If a different user is signing in, clear stale data immediately
+          // to prevent the previous user's data from flashing on screen.
+          if (currentUserId && currentUserId !== session.user.id) {
+            currentUserId = "";
+            currentLinkedSheetRowId = "";
+            clearDashboardForUnlinkedSheet();
+          }
           setTimeout(() => {
             startAppDataFlow(`auth:${event}`, { force: event === "SIGNED_IN", withSync: event !== "TOKEN_REFRESHED" });
           }, 0);
