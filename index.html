@@ -2867,6 +2867,10 @@
       renderDistribution([], null);
       renderHistoryTrendChart([]);
       renderHoldings([], new Map());
+
+      sheetUrlInput.value = "";
+      currentLinkedSheetRowId = "";
+      setSheetBindStatus("尚未綁定 Google Sheet");
     }
 
     async function setMoneyMasked(nextValue, { persistCloud = true } = {}) {
