@@ -49,6 +49,6 @@ Frontend file: `index.html`
 - GitHub Pages mode:
   - Frontend auto-calls `https://your-backend-domain.com/api/portfolio`
   - Update `PROD_API_BASE` in `index.html` to your real backend domain
-  - Backend CORS allowlist already includes `https://stanleylutw.github.io`
+  - Update `ALLOWED_ORIGINS` in `server.js` to include your GitHub Pages URL
   - Set backend env: `NODE_ENV=production` (for cross-site secure cookie)
   - Login on backend once: `https://your-backend-domain.com/auth/google`
