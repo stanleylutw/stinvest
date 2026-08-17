@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const isProduction = process.env.NODE_ENV === "production";
 const ALLOWED_ORIGINS = [
   "http://localhost:3000",
-  "https://stanleylutw.github.io"
+  "REPLACE_WITH_YOUR_DEPLOYED_FRONTEND_URL"
 ];
 const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
 const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
