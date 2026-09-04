@@ -2582,8 +2582,7 @@
       rows.forEach((r) => {
         const name = (r[idx.name] || "").trim();
         const hasStarMarkedCell = r.some((cell) => String(cell || "").trim().startsWith("*"));
-        const accountMarkerCell = r.find((cell) => String(cell || "").trim().startsWith("#"));
-        const accountMarker = accountMarkerCell ? String(accountMarkerCell).trim().replace(/^#/, "").trim() : "";
+        const accountMarker = name.startsWith("#") ? name.replace(/^#/, "").trim() : "";
         if (accountMarker) {
           currentGroup = accountMarker;
           groups.push(r);
