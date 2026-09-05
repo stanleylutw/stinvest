@@ -325,6 +325,98 @@ function findIndexByCandidates(headerRow, candidates) {
   return -1;
 }
 
+function isInvalidSheetPrice(value) {
+  const normalized = String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  return normalized === "#N/A" || normalized === "#NA";
+}
+
+function buildCachedHoldingRowMap(valueRanges) {
+  const rows = valueRanges?.[0]?.values || [];
+  if (!rows.length) return new Map();
+
+  const headerRow = rows[0] || [];
+  const nameIndex = findIndexByCandidates(headerRow, ["股票/ETF", "標的"]);
+  const priceIndex = findIndexByCandidates(headerRow, ["股價"]);
+  const map = new Map();
+  let currentAccount = "未分類";
+
+  rows.slice(1).forEach((row) => {
+    const name = getCell(row, nameIndex);
+    const accountMarker = name.startsWith("#") ? name.replace(/^#/, "").trim() : "";
+    if (accountMarker) {
+      currentAccount = accountMarker || "未分類";
+      return;
+    }
+    if (!name || name === "全帳戶") return;
+    if (isInvalidSheetPrice(getCell(row, priceIndex))) return;
+    map.set(`${currentAccount}\u0000${name}`, row);
+  });
+
+  return map;
+}
+
+function mergeCachedRowsForInvalidPrices(sheetData, cachedPayload) {
+  const rows = sheetData?.valueRanges?.[0]?.values || [];
+  if (!rows.length) {
+    return { sheetData, replaced: 0, skipped: 0 };
+  }
+
+  const headerRow = rows[0] || [];
+  const nameIndex = findIndexByCandidates(headerRow, ["股票/ETF", "標的"]);
+  const priceIndex = findIndexByCandidates(headerRow, ["股價"]);
+  if (nameIndex < 0 || priceIndex < 0) {
+    return { sheetData, replaced: 0, skipped: 0 };
+  }
+
+  const cachedRows = buildCachedHoldingRowMap(cachedPayload?.valueRanges);
+  const nextRows = [headerRow];
+  let currentAccount = "未分類";
+  let replaced = 0;
+  let skipped = 0;
+
+  rows.slice(1).forEach((row) => {
+    const name = getCell(row, nameIndex);
+    const accountMarker = name.startsWith("#") ? name.replace(/^#/, "").trim() : "";
+    if (accountMarker) {
+      currentAccount = accountMarker || "未分類";
+      nextRows.push(row);
+      return;
+    }
+    if (!name || name === "全帳戶" || !isInvalidSheetPrice(getCell(row, priceIndex))) {
+      nextRows.push(row);
+      return;
+    }
+
+    const cachedRow = cachedRows.get(`${currentAccount}\u0000${name}`);
+    if (cachedRow) {
+      nextRows.push(cachedRow);
+      replaced += 1;
+      return;
+    }
+
+    skipped += 1;
+  });
+
+  if (!replaced && !skipped) {
+    return { sheetData, replaced, skipped };
+  }
+
+  const nextValueRanges = [...(sheetData.valueRanges || [])];
+  nextValueRanges[0] = {
+    ...(sheetData.valueRanges?.[0] || { range: DEFAULT_RANGES[0], majorDimension: "ROWS" }),
+    values: nextRows
+  };
+
+  return {
+    sheetData: {
+      ...sheetData,
+      valueRanges: nextValueRanges
+    },
+    replaced,
+    skipped
+  };
+}
+
 function buildPortfolioItemsFromSheet(valueRanges, { userId, sheetId, logId, sourceSpreadsheetId }) {
   const rows = valueRanges?.[0]?.values || [];
   if (!rows.length) return [];
@@ -346,19 +438,20 @@ function buildPortfolioItemsFromSheet(valueRanges, { userId, sheetId, logId, sou
   let sheetOrder = 0;
 
   rows.slice(1).forEach((row) => {
-    const accountMarkerCell = row.find((cell) => String(cell || "").trim().startsWith("#"));
-    if (accountMarkerCell) {
-      currentAccount = String(accountMarkerCell).trim().replace(/^#/, "").trim() || "未分類";
+    const name = getCell(row, idx.name);
+    const accountMarker = name.startsWith("#") ? name.replace(/^#/, "").trim() : "";
+    if (accountMarker) {
+      currentAccount = accountMarker || "未分類";
       return;
     }
 
-    const name = getCell(row, idx.name);
     const hasStarMarkedCell = row.some((cell) => String(cell || "").trim().startsWith("*"));
     if (!name || name === "全帳戶" || hasStarMarkedCell) return;
 
     const hasAnyValue =
       getCell(row, idx.price) || getCell(row, idx.marketValue) || getCell(row, idx.profitWithDividend);
     if (!hasAnyValue) return;
+    if (isInvalidSheetPrice(getCell(row, idx.price))) return;
 
     items.push({
       user_id: userId,
@@ -803,9 +896,10 @@ app.post("/api/sync", async (req, res) => {
     }
 
     const wantsFastSync = req.body?.fast === true;
-    const cachedSyncLog = wantsFastSync
-      ? await measure("supabase:sync_logs.latest_cache", () => getLatestCachedSyncLog(userId, linkedSheet.id))
-      : null;
+    const cachedSyncLog = await measure(
+      "supabase:sync_logs.latest_cache",
+      () => getLatestCachedSyncLog(userId, linkedSheet.id)
+    );
     const cachedPayload = cachedSyncLog?.payload_json || null;
     let syncRanges = wantsFastSync && cachedPayload?.valueRanges?.[2]
       ? FAST_SYNC_RANGES
@@ -871,6 +965,17 @@ app.post("/api/sync", async (req, res) => {
           ms: 0
         });
       }
+    }
+
+    const invalidPriceMerge = mergeCachedRowsForInvalidPrices(sheetData, cachedPayload);
+    sheetData = invalidPriceMerge.sheetData;
+    if (invalidPriceMerge.replaced || invalidPriceMerge.skipped) {
+      timings.push({
+        label: "sheet:invalid_price_rows",
+        ms: 0,
+        replaced: invalidPriceMerge.replaced,
+        skipped: invalidPriceMerge.skipped
+      });
     }
 
     const items = buildPortfolioItemsFromSheet(sheetData.valueRanges, {
