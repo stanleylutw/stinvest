@@ -1,96 +1,81 @@
-# IMPLEMENTATION_PLAN - 安全性與同步完整性修正
+# IMPLEMENTATION_PLAN - 原子化投資組合同步
 
-Last updated: 2026-09-26 23:28:43 [Codex]
+Last updated: 2026-09-26 23:42:00 [Codex]
 
 ## Branch
 
-本次實作使用 branch：
+本次實作使用 stacked branch：
 
 ```text
-fix_security_and_sync_safety
+fix_atomic_portfolio_sync
 ```
 
-Base branch：`main`
+Parent branch：`fix_security_and_sync_safety`（commit `3ffab64`）
+
+合併順序：先合併 parent branch，再合併本 branch；本階段不直接 merge `main`。
 
 ## 1. 目標
 
-本階段先修正不需要資料庫 transaction 便能安全部署的高風險問題：
-
-1. 防止 Google Sheet 內容透過 `innerHTML` / SVG 造成 XSS。
-2. 移除 Google OAuth client 全域 credentials 共用造成的 race condition。
-3. 將 Google OAuth state 改成具 HMAC 簽章與期限的 stateless token，避免 Render 重啟造成狀態遺失。
-4. 修正 `#N/A` 持股回退：有快取時只回填錯誤欄位，沒有快取時保留原始列，不再從 payload 中刪除。
-5. Google 授權失效時，仍將已建立的 sync log 標記為 `failed`。
-6. 停止由 Express 公開整個專案目錄，只提供前端必要檔案。
-7. 統一 auto sync 的預設值與 5 分鐘提示文字。
-8. 修正「標的」名稱欄位相容性與數值 `0` 顯示。
-9. 更新可安全升級的 npm 依賴並重新執行 audit。
+1. 將 `portfolio_items` delete/insert、`user_sheets.last_synced_at` 與 `sync_logs` success update 放進同一個 PostgreSQL transaction。
+2. 防止同一使用者／Sheet 的同步在單一 Node instance 內重疊執行。
+3. 使用 PostgreSQL advisory transaction lock，避免不同 Render instance 同時寫入相同 Sheet。
+4. 較早開始但較晚完成的 request 不得覆蓋已完成的新同步。
+5. 禁止瀏覽器端讀取 `user_google_tokens` refresh token。
+6. 增加最新成功 cache 查詢需要的索引，並限制 sync log 持續膨脹。
 
 ## 2. 修改範圍
 
-### 2.1 `server.js`
+### 2.1 `supabase/migration_atomic_portfolio_sync.sql`
 
-- 新增 `createOAuth2Client()` factory。
-- Google 授權 URL、callback token exchange、Sheets API request 各自使用獨立 client。
-- 移除 `pendingGoogleLinkStates` 記憶體 Map 與其清理流程。
-- 使用 `SESSION_SECRET` 對 OAuth state payload 做 HMAC-SHA256 簽章。
-- state payload 包含 `purpose`、`userId`（link flow）、`returnTo`、`expiresAt` 與 nonce。
-- callback 僅接受簽章正確、未過期且 purpose 合法的 state。
-- `mergeCachedRowsForInvalidPrices()`：
-  - 有舊資料時，只以舊值替換目前 row 中的 Sheet error cells。
-  - 沒有舊資料時保留目前 row，避免從 `payload_json` 消失。
-  - `portfolio_items` 仍不得寫入無效 price。
-- 抽出 sync log failure helper；包含 `GoogleNotLinked` 在內的錯誤都先更新 log，再回應。
-- 將 `express.static(__dirname)` 改成明確的前端檔案 allowlist。
-- 不變更既有 API URL 與 response contract。
+- 新增 `public.apply_portfolio_sync(...)` RPC。
+- RPC 先取得 `user_id + sheet_id` advisory transaction lock。
+- 驗證傳入的 sync log 屬於相同使用者與 Sheet。
+- 若已有 `started_at` 較新的成功同步，將目前 log 標記為 `superseded`，不覆寫資料。
+- 否則在同一 transaction 中：
+  - delete 該 Sheet 舊的 `portfolio_items`；
+  - 由 JSONB items insert 新 snapshot；
+  - 更新 `user_sheets.last_synced_at`；
+  - 將 sync log 更新為 success 並寫入 payload。
+- 每個 Sheet 保留最近 50 筆 success 與最近 20 筆 failed/superseded log；不清除仍為 running 的 log。
+- 新增成功 cache 與同步先後比較所需 composite indexes。
+- 移除 `user_google_tokens_owner_all` policy，撤銷 anon/authenticated 權限，只授權 service role。
 
-### 2.2 `index.html`
+### 2.2 `supabase/schema.sql`
 
-- 新增集中式 `escapeHtml()`，所有由 Sheet 或快取取得、再插入 `innerHTML` / SVG 的文字必須 escape。
-- `td()` 使用 nullish/empty 判斷，數字 `0` 不得顯示為 `--`。
-- `resolveColumnIndexes()` 的名稱欄位同時支援「股票/ETF」與「標的」。
-- auto sync 提示改為 5 分鐘。
-- 沒有已儲存偏好時預設為 `auto`，與 bootstrap 行為一致。
-- 本階段不改 KPI 比較基準與負報酬圖表座標系；它們屬於下一個 UI/logic branch。
+- 同步加入 RPC、index、grant/revoke 與最新 RLS 定義，確保新環境 schema 與 migration 一致。
 
-### 2.3 `package.json` / `package-lock.json`
+### 2.3 `server.js`
 
-- 執行非 breaking 的 dependency 更新。
-- 不使用 `npm audit fix --force`。
-- Google APIs 的 breaking major upgrade 留待獨立 branch。
+- 新增 process-local `activeSyncKeys`。
+- 同一 `userId + sheetId` 已同步中時回傳 HTTP 202，不再啟動第二次 Google/Supabase sync。
+- 用 `apply_portfolio_sync` RPC 取代分離的 delete、insert 與 final PATCH calls。
+- 依 RPC 回傳的 `applied` 狀態決定是否直接回傳本次 payload；superseded request 讓前端重新讀最新 cache。
+- route 結束時在 `finally` 釋放 process-local sync key。
+- 不改變 `/api/sync` request contract。
 
 ### 2.4 `docs/CODEX_RESULT.md`
 
-- 完成後依 `comm.md` 格式覆寫本次結果。
+- 依 `comm.md` 覆寫本階段結果。
 
-## 3. 本階段刻意不處理
+## 3. 部署順序
 
-以下工作需要獨立 migration、產品決策或較大的效能改造，不納入本 branch：
+1. 先在 Supabase SQL Editor 執行 `supabase/migration_atomic_portfolio_sync.sql`。
+2. 確認 function 與 indexes 建立成功。
+3. 再部署包含本 branch 的 Render 後端。
 
-- `portfolio_items` delete/insert 改為 PostgreSQL transaction/RPC。
-- 跨 Render instance 的 distributed sync lock。
-- `user_google_tokens` RLS 收斂；將與 transaction migration 一起規劃並先套 SQL 再部署後端。
-- KPI 比較基準改成前一筆有效快照。
-- 投資分布圖支援負值座標。
-- logo 壓縮、IndexedDB snapshot、history lazy loading、ETag/Realtime。
-- Render Auto-Deploy 設定；這是部署平台設定，不是 repository code。
+若未先套 migration，新的 `/api/sync` 會因 RPC 不存在而失敗；不得顛倒順序。
 
 ## 4. 驗證
 
-1. `git diff --check`。
-2. `node --check server.js`。
-3. 抽取 `index.html` inline script 後執行 `node --check`。
-4. 以 Node 小型案例驗證：
-   - OAuth state 正確、竄改、過期三種情境。
-   - `#N/A` 有 cache 時只替換錯誤 cell。
-   - `#N/A` 無 cache 時 row 保留於 payload。
-   - HTML escaping 與數字 `0` 顯示。
-5. `npm start`，確認 `/`、`/health`、必要前端 assets 回傳 `200`。
-6. 確認 `/server.js`、`/supabase/schema.sql`、`/comm.md` 回傳 `404`。
-7. `npm audit --omit=dev`，記錄仍存在的漏洞與不能非破壞性修正的項目。
+1. `git diff --check`、`node --check server.js`。
+2. 以 local mock Supabase server 驗證 `/api/sync` 只呼叫一次 atomic RPC，不再呼叫 portfolio delete/insert。
+3. 驗證兩個同 key request 時，第二個回 HTTP 202。
+4. 靜態檢查 migration：transaction function、advisory lock、superseded guard、RLS revoke、indexes 與 retention 都存在。
+5. `npm start` 與 `/health` smoke test。
 
-## 5. 後續 branches
+## 5. 不在本階段處理
 
-1. `fix_atomic_portfolio_sync`：transaction/RPC、sync lock、token table RLS、索引與 retention。
-2. `fix_dashboard_logic_and_charts`：KPI baseline、負報酬率圖、相關 UI 邊界案例。
-3. `perf_dashboard_loading`：logo、bootstrap round trips、payload unchanged check、history lazy load、本機 snapshot。
+- Google APIs breaking major upgrade。
+- KPI baseline 與負報酬率圖表。
+- logo、bootstrap、history payload、IndexedDB 等載入效能改造。
+- 實際執行 Supabase migration 或部署 Render；需要使用者的外部環境操作授權與部署順序確認。

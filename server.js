@@ -18,6 +18,7 @@ const ALLOWED_ORIGINS = [
 const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
 const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const issuedApiTokens = new Map();
+const activeSyncKeys = new Set();
 const GOOGLE_LINK_STATE_TTL_MS = 1000 * 60 * 10;
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -930,6 +931,8 @@ async function markSyncLogFailed(syncLogId, error) {
 
 app.post("/api/sync", async (req, res) => {
   let syncLogId = "";
+  let syncLockKey = "";
+  let ownsSyncLock = false;
   const syncStartedAt = Date.now();
   const timings = [];
   const measure = async (label, fn) => {
@@ -959,6 +962,19 @@ app.post("/api/sync", async (req, res) => {
       });
     }
 
+    syncLockKey = `${userId}:${linkedSheet.id}`;
+    if (activeSyncKeys.has(syncLockKey)) {
+      return res.status(202).json({
+        ok: true,
+        skipped: true,
+        reason: "SyncInProgress",
+        userId,
+        sheetId: linkedSheet.id
+      });
+    }
+    activeSyncKeys.add(syncLockKey);
+    ownsSyncLock = true;
+
     const wantsFastSync = req.body?.fast === true;
     const cachedSyncLog = await measure(
       "supabase:sync_logs.latest_cache",
@@ -985,6 +1001,9 @@ app.post("/api/sync", async (req, res) => {
       })
     );
     syncLogId = Array.isArray(logRows) && logRows.length ? logRows[0].id : "";
+    if (!syncLogId) {
+      throw new Error("Unable to create sync log");
+    }
 
     const fetchedSheetData = await measure(
       `google:sheets.batchGet:${syncRanges.length}`,
@@ -1049,58 +1068,30 @@ app.post("/api/sync", async (req, res) => {
       sourceSpreadsheetId: linkedSheet.spreadsheet_id
     });
 
-    await measure(
-      "supabase:portfolio_items.delete",
-      () => supabaseRequest(
-        `/rest/v1/portfolio_items?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}`,
-        { method: "DELETE" }
-      )
-    );
-
-    if (items.length > 0) {
-      await measure(
-        `supabase:portfolio_items.insert:${items.length}`,
-        () => supabaseRequest("/rest/v1/portfolio_items", {
-          method: "POST",
-          body: items
-        })
-      );
-    }
-
     const finishedAt = new Date().toISOString();
-
-    const finalWrites = [
-      measure(
-        "supabase:user_sheets.patch",
-        () => supabaseRequest(
-          `/rest/v1/user_sheets?id=eq.${encodeURIComponent(linkedSheet.id)}&user_id=eq.${encodeURIComponent(userId)}`,
-          {
-            method: "PATCH",
-            body: { last_synced_at: finishedAt }
-          }
-        )
-      )
-    ];
-
-    if (syncLogId) {
-      finalWrites.push(
-        measure(
-          "supabase:sync_logs.patch_success",
-          () => supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
-            method: "PATCH",
-            body: {
-              status: "success",
-              finished_at: finishedAt,
-              row_count: items.length,
-              message: "sync completed",
-              source_ranges: syncRanges,
-              payload_json: sheetData
-            }
-          })
-        )
-      );
+    const applyResult = await measure(
+      `supabase:apply_portfolio_sync:${items.length}`,
+      () => supabaseRequest("/rest/v1/rpc/apply_portfolio_sync", {
+        method: "POST",
+        body: {
+          p_user_id: userId,
+          p_sheet_id: linkedSheet.id,
+          p_sync_log_id: syncLogId,
+          p_spreadsheet_id: linkedSheet.spreadsheet_id,
+          p_items: items,
+          p_payload_json: sheetData,
+          p_source_ranges: syncRanges,
+          p_finished_at: finishedAt
+        }
+      })
+    );
+    if (!applyResult || typeof applyResult.applied !== "boolean") {
+      throw new Error("Atomic sync RPC returned an invalid response");
     }
-    await Promise.all(finalWrites);
+    const applied = applyResult.applied;
+    const syncedRows = Number.isFinite(Number(applyResult?.rowCount))
+      ? Number(applyResult.rowCount)
+      : items.length;
 
     const totalMs = Date.now() - syncStartedAt;
     console.info("Sync timing", {
@@ -1117,13 +1108,15 @@ app.post("/api/sync", async (req, res) => {
       sheetId: linkedSheet.id,
       spreadsheetId: linkedSheet.spreadsheet_id,
       syncLogId,
-      syncedRows: items.length,
+      syncedRows,
+      applied,
+      reason: applyResult?.reason || (applied ? "updated" : "superseded"),
       fast: wantsFastSync && syncRanges.length === FAST_SYNC_RANGES.length,
       sourceRanges: syncRanges,
       finishedAt,
       totalMs,
       timings,
-      data: sheetData
+      data: applied ? sheetData : null
     });
   } catch (error) {
     console.error("Sync error:", error);
@@ -1139,6 +1132,8 @@ app.post("/api/sync", async (req, res) => {
       error: "SyncFailed",
       message: error.message
     });
+  } finally {
+    if (ownsSyncLock && syncLockKey) activeSyncKeys.delete(syncLockKey);
   }
 });
 

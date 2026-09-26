@@ -1,38 +1,35 @@
-English correction: `Please create an implementation plan and follow it. Claude Code is not working right now.`
+English correction: `Okay, proceed to the next branch.`
 
-中文主要回覆：已建立並依照 `docs/IMPLEMENTATION_PLAN.md` 完成本階段實作，並建立／切換至 branch `fix_security_and_sync_safety`。
+中文主要回覆：已完成第二階段原子化同步實作，並建立／切換至 stacked branch `fix_atomic_portfolio_sync`。Parent branch 為 `fix_security_and_sync_safety`，commit `3ffab64`。
 
 修改範圍：
-- `docs/IMPLEMENTATION_PLAN.md`：覆寫為安全性與同步完整性修正計畫，明確區分本 branch 與後續 transaction、UI、效能 branches。
-- `server.js`：Google OAuth client 改為每次操作獨立建立，避免並行 credentials race condition。
-- `server.js`：OAuth state 改為 HMAC-SHA256 簽章、含 purpose／期限／nonce 的 stateless token，移除 Render 記憶體 Map 相依。
-- `server.js`：`#N/A` 有快取時只回填錯誤 cell；沒有快取時保留原 row，不再從 `payload_json` 刪除；無效 price 仍不寫入 `portfolio_items`。
-- `server.js`：Google 授權失效及其他同步錯誤均會把既有 sync log 標記為 `failed`。
-- `server.js`：移除整個 repository 的 Express static exposure，只 allowlist `index.html`、logo 與設定圖示。
-- `server.js`：支援 `NODE_ENV=test` 匯入 helper 而不啟動 listener，供單元級驗證。
-- `index.html`：新增 `escapeHtml()`，保護 Sheet 表頭、帳戶、持股值與 SVG 標籤的 XSS 輸出邊界。
-- `index.html`：數字 `0` 不再被顯示成 `--`；名稱欄支援「股票/ETF」及「標的」。
-- `index.html`：auto sync 預設與提示統一為每 5 分鐘。
-- `package.json` / `package-lock.json`：套用非 breaking 安全更新，並將 `qs` 固定為 `6.16.0`。
+- `docs/IMPLEMENTATION_PLAN.md`：覆寫為 atomic portfolio sync 計畫，記錄 branch 相依、部署順序與驗證方式。
+- `supabase/migration_atomic_portfolio_sync.sql`：新增 atomic sync RPC、advisory transaction lock、較新同步優先保護、sync log retention、cache indexes，以及 `user_google_tokens` backend-only 權限。
+- `supabase/schema.sql`：同步加入 migration 的 RPC、indexes、RLS policy 移除與 grant/revoke，確保新環境 schema 一致。
+- `server.js`：新增 `userId + sheetId` process-local single-flight；重複 request 回 HTTP 202。
+- `server.js`：以單次 `/rest/v1/rpc/apply_portfolio_sync` 取代 `portfolio_items` delete/insert 與兩個 final PATCH。
+- `server.js`：RPC 若判定舊 request 已被較新同步 supersede，回傳 `data: null`，讓前端重新讀最新 cache。
+- `server.js`：只有實際取得 local lock 的 request 能在 `finally` 釋放該 lock。
 
 驗證：
 - `git diff --check`：通過。
 - `node --check server.js`：通過。
-- 編譯 `index.html` inline script：通過。
-- OAuth state 測試：有效 state 通過；竄改與過期 state 均被拒絕。
-- `#N/A` 合併測試：舊 price／錯誤 cell 正確回填，新的有效數量保留；無 cache 的新標的 row 保留。
-- HTML escaping 與數字 `0` 測試：通過。
-- `npm start`：成功啟動；`/`、`/health`、`/stinvest_logo3.png` 均為 `200`。
-- 靜態檔案限制：`/server.js`、`/supabase/schema.sql`、`/comm.md`、`/package.json` 均為 `404`。
-- `npm audit --omit=dev`：由 6 個漏洞降至 4 個 moderate；剩餘項目來自 `googleapis@144` 的 `uuid` 依賴鏈，需要 breaking major upgrade，未使用 `--force`。
+- `index.html` inline script 編譯：通過。
+- Mock Supabase atomic integration：`/api/sync` 僅呼叫一次 `apply_portfolio_sync` RPC，沒有呼叫 `portfolio_items` DELETE/INSERT，回傳 `applied: true` 與正確 row count。
+- Concurrent sync integration：第一個 request 持有 lock 時，第二個同 key request 回 HTTP 202 `SyncInProgress`；第一個結束後才釋放自己的 lock。
+- `supabase/schema.sql` 與 migration 的 RPC 定義逐字比對一致。
+- 靜態驗證 migration 包含 advisory lock、superseded guard、50/20 log retention、composite indexes、token table revoke 與 service-role-only grants。
+- `npm start`：成功；`/` 與 `/health` 回 `200`，`/server.js` 回 `404`。
 
 限制／未能驗證的部分：
-- 未使用真實 Google OAuth callback 與個人 Sheet 做登入後端到端測試，避免在測試流程變更使用者授權狀態。
-- 尚未處理 PostgreSQL transaction／distributed sync lock、`user_google_tokens` RLS、KPI baseline、負報酬圖表與大型載入效能改造；已列入 plan 的後續 branches。
-- Render production 仍需在本 branch 通過 review、合併並部署後，才能驗證線上 `/server.js` 不再公開及 OAuth 行為。
+- 本機沒有 `psql` 或 Supabase CLI，無法在本機 PostgreSQL 實際執行 migration；SQL 已做結構與一致性檢查，但必須先在 Supabase SQL Editor 執行。
+- 未在真實 Supabase 資料上觸發兩個跨 instance RPC；資料庫 advisory lock 與 superseded 判斷依 PostgreSQL 原生 transaction semantics 實作。
+- 必須先套用 `supabase/migration_atomic_portfolio_sync.sql`，再部署本 branch；順序顛倒會讓 `/api/sync` 因 RPC 尚不存在而失敗。
 
 工作區狀態：
-- branch：`fix_security_and_sync_safety`
-- 已修改：`docs/IMPLEMENTATION_PLAN.md`、`docs/CODEX_RESULT.md`、`server.js`、`index.html`、`package.json`、`package-lock.json`
+- branch：`fix_atomic_portfolio_sync`
+- parent commit：`3ffab64 fix: harden OAuth and sync data handling`
+- 已修改：`docs/IMPLEMENTATION_PLAN.md`、`docs/CODEX_RESULT.md`、`server.js`、`supabase/schema.sql`
+- 新增：`supabase/migration_atomic_portfolio_sync.sql`
 - 未追蹤且未加入：`.DS_Store`、`stinvest_logo1.original.png`
-- 尚未 commit、merge 或 push。
+- 第二階段尚未 commit、merge 或 push。
