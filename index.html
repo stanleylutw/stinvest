@@ -1540,6 +1540,8 @@
     let latestSummary = null;
     let latestHistoryCacheKey = "";
     let latestParsedHistory = null;
+    let lastRenderedSyncLogId = "";
+    let lastRenderedSyncedAt = "";
     let visibleColumns = [];
     let refreshTimer = null;
     let autoSyncTimer = null;
@@ -1551,6 +1553,7 @@
     let currentUserId = "";
     let currentLinkedSheetRowId = "";
     let appStartupPromise = null;
+    let loadDataPromise = null;
     let supabaseClient = null;
     let cachedSupabaseToken = "";
     let cachedSupabaseTokenExpiresAt = 0;
@@ -2883,6 +2886,8 @@
       latestHistorySnapshots = [];
       latestHistoryCacheKey = "";
       latestParsedHistory = null;
+      lastRenderedSyncLogId = "";
+      lastRenderedSyncedAt = "";
 
       Object.values(kpiEls).forEach((el) => {
         if (!el) return;
@@ -2975,6 +2980,9 @@
           elapsedMs: Math.round(performance.now() - t0)
         });
         return;
+      }
+      if (currentLinkedSheetRowId && currentLinkedSheetRowId !== row.id) {
+        clearDashboardForUnlinkedSheet();
       }
       currentLinkedSheetRowId = row.id || "";
       btnSyncNow.disabled = false;
@@ -3304,7 +3312,7 @@
           if (!ready) return false;
           await triggerImmediateRefresh({ force, withSync });
           if (!refreshTimer) {
-            refreshTimer = setInterval(loadData, REFRESH_MS);
+            refreshTimer = setInterval(() => loadData(), REFRESH_MS);
           }
           addDebugLog("INFO", "startAppDataFlow done", { reason });
           return true;
@@ -3394,6 +3402,15 @@
       effectiveSyncedAt = "",
       effectiveSyncLogId = ""
     } = {}) {
+      if (effectiveSyncLogId && effectiveSyncLogId === lastRenderedSyncLogId) {
+        lastRenderedSyncedAt = effectiveSyncedAt || lastRenderedSyncedAt;
+        statusText.textContent = loadedFromCache ? "已更新（快取未變更）" : "已更新";
+        updatedAt.textContent = lastRenderedSyncedAt
+          ? `${new Date(lastRenderedSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(lastRenderedSyncedAt)}）`
+          : "--";
+        return false;
+      }
+
       const { headerRow, summary, groups, holdings, groupSummaries } = parseRows(data);
       const distItems = parseDistribution(data);
       const history = effectiveSyncLogId && effectiveSyncLogId === latestHistoryCacheKey && latestParsedHistory
@@ -3431,9 +3448,12 @@
       updatedAt.textContent = effectiveSyncedAt
         ? `${new Date(effectiveSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(effectiveSyncedAt)}）`
         : "--";
+      lastRenderedSyncLogId = effectiveSyncLogId || "";
+      lastRenderedSyncedAt = effectiveSyncedAt || "";
+      return true;
     }
 
-    async function loadData() {
+    async function performLoadData() {
       const t0 = performance.now();
       addDebugLog("INFO", "loadData start");
       lastRefreshTriggeredAt = Date.now();
@@ -3450,17 +3470,36 @@
           sbAccessToken = await getSupabaseAccessToken();
           if (sbAccessToken) {
             const cacheT0 = performance.now();
+            const cacheHeaders = {
+              Authorization: `Bearer ${sbAccessToken}`
+            };
+            if (lastRenderedSyncLogId) {
+              cacheHeaders["If-None-Match"] = `"${lastRenderedSyncLogId}"`;
+            }
             const cacheRes = await fetch(getCachedPortfolioUrl(), {
               cache: "no-store",
-              headers: {
-                Authorization: `Bearer ${sbAccessToken}`
-              }
+              headers: cacheHeaders
             });
             addDebugLog("DEBUG", "cache fetch finished", {
               status: cacheRes.status,
               elapsedMs: Math.round(performance.now() - cacheT0)
             });
-            if (cacheRes.ok) {
+            if (cacheRes.status === 304 && lastRenderedSyncLogId) {
+              statusText.textContent = "已更新（快取未變更）";
+              updatedAt.textContent = lastRenderedSyncedAt
+                ? `${new Date(lastRenderedSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(lastRenderedSyncedAt)}）`
+                : "--";
+              addDebugLog("INFO", "loadData done (not modified)", {
+                syncLogId: lastRenderedSyncLogId,
+                elapsedMs: Math.round(performance.now() - t0)
+              });
+              return {
+                ok: true,
+                effectiveSyncedAt: lastRenderedSyncedAt,
+                loadedFromCache: true,
+                unchanged: true
+              };
+            } else if (cacheRes.ok) {
               const cacheJson = await cacheRes.json();
               data = cacheJson.data || null;
               loadedFromCache = !!data;
@@ -3588,6 +3627,17 @@
       } finally {
         setRefreshingUI(false);
       }
+    }
+
+    function loadData() {
+      if (loadDataPromise) {
+        addDebugLog("DEBUG", "loadData reused existing promise");
+        return loadDataPromise;
+      }
+      loadDataPromise = performLoadData().finally(() => {
+        loadDataPromise = null;
+      });
+      return loadDataPromise;
     }
 
     const COLLAPSE_STORAGE_PREFIX = "invest_section_collapsed_";

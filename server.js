@@ -64,8 +64,9 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-St-Token, X-Supabase-Access-Token"
+      "Content-Type, Authorization, X-St-Token, X-Supabase-Access-Token, If-None-Match"
     );
+    res.setHeader("Access-Control-Expose-Headers", "ETag");
   }
 
   if (req.method === "OPTIONS") {
@@ -864,13 +865,35 @@ app.get("/api/portfolio-cached", async (req, res) => {
     if (!userId) throw new Error("Invalid Supabase user");
 
     const requestedSheetId = typeof req.query.sheet_id === "string" ? req.query.sheet_id.trim() : "";
+    const ifNoneMatch = String(req.headers["if-none-match"] || "")
+      .split(",")[0]
+      .trim()
+      .replace(/^W\//, "")
+      .replace(/^"|"$/g, "");
     let linkedSheet = null;
+    let latest = null;
+    let latestWasQueried = false;
+
+    const getLatestLog = async (sheetId, includePayload) => {
+      const select = includePayload
+        ? "id,finished_at,row_count,spreadsheet_id,payload_json"
+        : "id,finished_at,row_count,spreadsheet_id";
+      const logs = await supabaseRequest(
+        `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(sheetId)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=${select}`
+      );
+      return Array.isArray(logs) && logs.length ? logs[0] : null;
+    };
 
     if (requestedSheetId) {
-      const linkedRows = await supabaseRequest(
-        `/rest/v1/user_sheets?id=eq.${encodeURIComponent(requestedSheetId)}&user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&limit=1&select=id,spreadsheet_id`
-      );
+      const [linkedRows, latestLog] = await Promise.all([
+        supabaseRequest(
+          `/rest/v1/user_sheets?id=eq.${encodeURIComponent(requestedSheetId)}&user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&limit=1&select=id,spreadsheet_id`
+        ),
+        getLatestLog(requestedSheetId, !ifNoneMatch)
+      ]);
       linkedSheet = Array.isArray(linkedRows) && linkedRows.length ? linkedRows[0] : null;
+      latest = latestLog;
+      latestWasQueried = true;
     } else {
       const linkedRows = await supabaseRequest(
         `/rest/v1/user_sheets?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=updated_at.desc&limit=1&select=id,spreadsheet_id`
@@ -885,10 +908,24 @@ app.get("/api/portfolio-cached", async (req, res) => {
       });
     }
 
-    const logs = await supabaseRequest(
-      `/rest/v1/sync_logs?user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}&status=eq.success&order=finished_at.desc.nullslast,created_at.desc&limit=1&select=id,finished_at,row_count,spreadsheet_id,payload_json`
-    );
-    const latest = Array.isArray(logs) && logs.length ? logs[0] : null;
+    if (!latestWasQueried) {
+      latest = await getLatestLog(linkedSheet.id, !ifNoneMatch);
+    }
+    if (latest?.id) {
+      res.setHeader("Cache-Control", "private, no-cache");
+      res.setHeader("ETag", `"${latest.id}"`);
+    }
+    if (latest?.id && (ifNoneMatch === latest.id || ifNoneMatch === "*")) {
+      return res.status(304).end();
+    }
+
+    if (latest?.id && ifNoneMatch && !latest.payload_json) {
+      const payloadRows = await supabaseRequest(
+        `/rest/v1/sync_logs?id=eq.${encodeURIComponent(latest.id)}&user_id=eq.${encodeURIComponent(userId)}&sheet_id=eq.${encodeURIComponent(linkedSheet.id)}&status=eq.success&limit=1&select=payload_json`
+      );
+      const payloadRow = Array.isArray(payloadRows) && payloadRows.length ? payloadRows[0] : null;
+      latest.payload_json = payloadRow?.payload_json || null;
+    }
     if (!latest?.payload_json) {
       return res.status(404).json({
         error: "NoCache",

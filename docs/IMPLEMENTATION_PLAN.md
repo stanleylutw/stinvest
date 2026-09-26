@@ -1,47 +1,49 @@
-# 儀表板比較基準與圖表修正實作計畫 v1.0
+# 快取刷新管線效能改善實作計畫 v1.0
 
-Last updated: 2026-09-26 23:48:26 [Codex]
+Last updated: 2026-09-26 23:53:51 [Codex]
 
 ## Revision History
 
 | Version | Date Time | Summary | Who | Branch |
 |---|---|---|---|---|
-| v1.0 | 2026-09-26 23:48:26 | 修正 KPI 比較基準、負報酬長條與歷史圖標籤邊界 | Codex | `fix_dashboard_logic_and_charts` |
+| v1.0 | 2026-09-26 23:53:51 | 降低重複快取請求、payload 傳輸與前端重繪成本 | Codex | `perf_cache_refresh_pipeline` |
 
 ## Branch
 
 本階段已建立並切換至：
 
 ```bash
-git checkout -b fix_dashboard_logic_and_charts
+git checkout -b perf_cache_refresh_pipeline
 ```
 
-Parent branch：`fix_atomic_portfolio_sync`
+Parent branch：`fix_dashboard_logic_and_charts`（commit `7468409`）
 
-本 branch 為依序處理審查問題的 stacked branch；需先完成前兩階段再單獨 review、commit，尚不合併至 `main`。
+本 branch 為 stacked branch；需依序 review、commit，尚不合併至 `main`。
 
 ## 目標
 
-修正儀表板三個前端邏輯／顯示問題：
-
-1. KPI 比較基準不應因連續兩日總市值相同而跳過最近日期。
-2. 投資分布圖應顯示負報酬率，不可將負值壓成 0%。
-3. 歷史趨勢圖最後兩個日期標籤在剛好落於臨界間距時也應避免重疊。
+在不改變開頁背景同步、每 5 分鐘自動同步與每 60 秒快取檢查等既有產品行為下，降低相同快取被重複請求、下載、解析與重繪的成本，並避免重疊 `loadData()` 造成舊回應覆蓋新畫面。
 
 ## 修改範圍
 
 ### `index.html`
 
-1. `findBaselineSnapshot()` 改以 `history.daily` 的有效每日快照判斷：
-   - 若最新每日快照的總市值等於目前總市值，回傳前一筆有效每日快照。
-   - 若最新每日快照尚未反映目前總市值，回傳最新有效每日快照。
-   - 不再用「一路尋找不同市值」作為前一期判斷，確保平盤時顯示 0 差異。
-2. `renderDistribution()` 建立同時涵蓋正負值的 Y 軸 domain：
-   - Y 軸 tick 可包含負百分比。
-   - 0% 線作為長條基準。
-   - 正值向上、負值向下繪製，標籤放在各自長條端點外側。
-   - 保留既有寬度、響應式與趨勢文字配置。
-3. 歷史趨勢圖 X 軸最後標籤的近距判斷由 `< xStep / 2` 改為 `<= xStep / 2`。
+1. 為 `loadData()` 增加 single-flight：已有快取請求進行時共用同一 Promise，避免 timer、focus 與同步 fallback 重疊發送請求。
+2. 保存最後成功渲染的 `syncLogId` 與同步時間；讀取快取時以 `If-None-Match` 傳給後端。
+3. 後端回 HTTP 304 時沿用目前畫面與同步時間，不重新下載、解析或渲染 payload。
+4. 即使收到 HTTP 200，若 `syncLogId` 與最後渲染版本相同，也只更新狀態文字，不重跑完整 dashboard parse/render。
+5. 解除綁定、登出或切換使用者時清除最後渲染版本，避免跨 Sheet／跨使用者誤判為未變更。
+6. 將 `setInterval(loadData, ...)` 改為明確 callback，避免 timer 參數誤傳至未來擴充的函式介面。
+
+### `server.js`
+
+1. CORS allow headers 加入 `If-None-Match`。
+2. `/api/portfolio-cached` 支援以最新 `sync_logs.id` 作為 ETag：
+   - ETag 相同時回 HTTP 304，不回傳 `payload_json`。
+   - 初次或版本變更時回 HTTP 200 與完整 payload，並附 ETag。
+3. 已指定 `sheet_id` 時，平行執行 Sheet ownership 驗證與最新 log metadata 查詢。
+4. 有條件請求先只讀 log metadata；僅在版本變更時再讀該筆 `payload_json`，降低每分鐘輪詢的 Supabase payload 傳輸量。
+5. 未指定 `sheet_id` 的 legacy 路徑維持原本依序查詢行為。
 
 ### `docs/CODEX_RESULT.md`
 
@@ -49,16 +51,19 @@ Parent branch：`fix_atomic_portfolio_sync`
 
 ## 不在範圍內
 
-- 不修改 `server.js`、Supabase schema、migration 或 API contract。
-- 不調整圖表既有最小寬度與橫向捲動策略。
-- 不處理審查報告中已由前兩階段完成的 OAuth、同步原子性、token 權限或 `#N/A` 快取問題。
-- 不合併至 `main`，不 push。
+- 不修改 Google Sheets 同步頻率、開頁背景同步或 auto/manual mode。
+- 不修改 Supabase schema、RLS、migration 或 API response 的成功 payload 結構。
+- 不導入 IndexedDB、Service Worker 或新的前端 framework。
+- 不修改圖表、KPI、OAuth 與持股資料邏輯。
+- 不 merge、push 或部署。
 
 ## 驗證
 
-1. 執行 `git diff --check`。
-2. 以 Node 編譯 `index.html` 內 inline script，確認無 JavaScript 語法錯誤。
-3. 以隔離測試覆蓋 KPI 比較基準：最新值相同、連續平盤、最新值尚未同步、無有效歷史資料。
-4. 以隔離測試覆蓋分布圖 scale／geometry：全正值、含負值、負值長條向下及 0% 基準。
-5. 啟動本機 server，檢查 `/`、`/health` 與靜態檔案 allowlist。
-6. 記錄因登入與真實資料限制而無法完成的瀏覽器目視驗證。
+1. `git diff --check`、`node --check server.js` 與 inline script 編譯。
+2. Mock Supabase integration：
+   - 首次快取讀取回 200、完整 payload 與 ETag。
+   - 相同 `If-None-Match` 回 304，且不執行 payload query。
+   - 新 log ID 回 200，metadata 與 payload 查詢順序正確。
+   - 不屬於目前使用者的 `sheet_id` 不得回傳資料。
+3. 前端隔離測試：並行兩次 `loadData()` 只執行一次 underlying load。
+4. 啟動本機 server，確認 `/`、`/health` 與靜態檔案 allowlist。
