@@ -1,123 +1,96 @@
-# IMPLEMENTATION_PLAN — 開頁立即 sync + 自動每 5 分鐘 sync
+# IMPLEMENTATION_PLAN - 安全性與同步完整性修正
 
-Last updated: 2026-07-02 00:00:00 [Claude]
+Last updated: 2026-09-26 23:28:43 [Codex]
 
 ## Branch
 
-Before starting implementation, create and switch to the new branch:
+本次實作使用 branch：
 
-```
-git checkout -b feat_auto_sync_on_open
-```
-
-Base branch: `main`
-
----
-
-## 1. 背景
-
-目前的同步策略：
-- **開頁**：`withSync: false`，只讀 Supabase 快取，不打 Google Sheets API
-- **自動同步**：預設 `syncMode = "manual"`，`autoSyncTimer` 不啟動，使用者需手動切換才有定時 sync
-- **定時間隔**：`AUTO_SYNC_MS = 3 * 60 * 1000`（3 分鐘）
-- **快取過期閾值**：`STALE_CACHE_MS = 10 * 60 * 1000`（10 分鐘），tab focus 回來只有快取超過 10 分鐘才 sync
-
-目標新策略：
-1. **開頁立即 sync**：進頁面就打 Google Sheets API，讓使用者看到最新股價
-2. **每 5 分鐘自動 sync**：預設開啟 auto 模式，不需要使用者手動切換
-3. **tab 回來時**：只要距上次 sync > 30 秒就再 sync（而非現在的 10 分鐘）
-
----
-
-## 2. 修改範圍（僅限 `index.html`，以下 4 處，不得修改其他函式或檔案）
-
-### 2.1 縮小快取過期閾值
-
-找到（`index.html` 約第 1474 行）：
-
-```js
-const STALE_CACHE_MS = 10 * 60 * 1000;
+```text
+fix_security_and_sync_safety
 ```
 
-改成：
+Base branch：`main`
 
-```js
-const STALE_CACHE_MS = 30 * 1000;
-```
+## 1. 目標
 
-說明：`triggerImmediateRefresh` 內的 sync 判斷是 `cacheAgeMs > STALE_CACHE_MS`，把閾值從 10 分鐘降到 30 秒，讓開頁及 tab focus 幾乎都會觸發 sync（除非 30 秒內剛剛 sync 過）。
+本階段先修正不需要資料庫 transaction 便能安全部署的高風險問題：
 
-### 2.2 縮短自動 sync 間隔
+1. 防止 Google Sheet 內容透過 `innerHTML` / SVG 造成 XSS。
+2. 移除 Google OAuth client 全域 credentials 共用造成的 race condition。
+3. 將 Google OAuth state 改成具 HMAC 簽章與期限的 stateless token，避免 Render 重啟造成狀態遺失。
+4. 修正 `#N/A` 持股回退：有快取時只回填錯誤欄位，沒有快取時保留原始列，不再從 payload 中刪除。
+5. Google 授權失效時，仍將已建立的 sync log 標記為 `failed`。
+6. 停止由 Express 公開整個專案目錄，只提供前端必要檔案。
+7. 統一 auto sync 的預設值與 5 分鐘提示文字。
+8. 修正「標的」名稱欄位相容性與數值 `0` 顯示。
+9. 更新可安全升級的 npm 依賴並重新執行 audit。
 
-找到（約第 1473 行）：
+## 2. 修改範圍
 
-```js
-const AUTO_SYNC_MS = 3 * 60 * 1000;
-```
+### 2.1 `server.js`
 
-改成：
+- 新增 `createOAuth2Client()` factory。
+- Google 授權 URL、callback token exchange、Sheets API request 各自使用獨立 client。
+- 移除 `pendingGoogleLinkStates` 記憶體 Map 與其清理流程。
+- 使用 `SESSION_SECRET` 對 OAuth state payload 做 HMAC-SHA256 簽章。
+- state payload 包含 `purpose`、`userId`（link flow）、`returnTo`、`expiresAt` 與 nonce。
+- callback 僅接受簽章正確、未過期且 purpose 合法的 state。
+- `mergeCachedRowsForInvalidPrices()`：
+  - 有舊資料時，只以舊值替換目前 row 中的 Sheet error cells。
+  - 沒有舊資料時保留目前 row，避免從 `payload_json` 消失。
+  - `portfolio_items` 仍不得寫入無效 price。
+- 抽出 sync log failure helper；包含 `GoogleNotLinked` 在內的錯誤都先更新 log，再回應。
+- 將 `express.static(__dirname)` 改成明確的前端檔案 allowlist。
+- 不變更既有 API URL 與 response contract。
 
-```js
-const AUTO_SYNC_MS = 5 * 60 * 1000;
-```
+### 2.2 `index.html`
 
-說明：GOOGLEFINANCE 約每 15～20 分鐘更新一次，5 分鐘 sync 間隔是合理頻率，比 3 分鐘更節省 Google API quota。
+- 新增集中式 `escapeHtml()`，所有由 Sheet 或快取取得、再插入 `innerHTML` / SVG 的文字必須 escape。
+- `td()` 使用 nullish/empty 判斷，數字 `0` 不得顯示為 `--`。
+- `resolveColumnIndexes()` 的名稱欄位同時支援「股票/ETF」與「標的」。
+- auto sync 提示改為 5 分鐘。
+- 沒有已儲存偏好時預設為 `auto`，與 bootstrap 行為一致。
+- 本階段不改 KPI 比較基準與負報酬圖表座標系；它們屬於下一個 UI/logic branch。
 
-### 2.3 開頁時改為 withSync: true
+### 2.3 `package.json` / `package-lock.json`
 
-找到（約第 3647 行）：
+- 執行非 breaking 的 dependency 更新。
+- 不使用 `npm audit fix --force`。
+- Google APIs 的 breaking major upgrade 留待獨立 branch。
 
-```js
-await startAppDataFlow("bootstrap", { force: true, withSync: false });
-```
+### 2.4 `docs/CODEX_RESULT.md`
 
-改成：
+- 完成後依 `comm.md` 格式覆寫本次結果。
 
-```js
-await startAppDataFlow("bootstrap", { force: true, withSync: true });
-```
+## 3. 本階段刻意不處理
 
-說明：開頁時立即觸發 Google Sheets sync，不等快取新舊判斷。
+以下工作需要獨立 migration、產品決策或較大的效能改造，不納入本 branch：
 
-### 2.4 預設同步模式改為 auto
+- `portfolio_items` delete/insert 改為 PostgreSQL transaction/RPC。
+- 跨 Render instance 的 distributed sync lock。
+- `user_google_tokens` RLS 收斂；將與 transaction migration 一起規劃並先套 SQL 再部署後端。
+- KPI 比較基準改成前一筆有效快照。
+- 投資分布圖支援負值座標。
+- logo 壓縮、IndexedDB snapshot、history lazy loading、ETag/Realtime。
+- Render Auto-Deploy 設定；這是部署平台設定，不是 repository code。
 
-找到（約第 3646 行）：
+## 4. 驗證
 
-```js
-setSyncMode("manual", { persist: false });
-```
+1. `git diff --check`。
+2. `node --check server.js`。
+3. 抽取 `index.html` inline script 後執行 `node --check`。
+4. 以 Node 小型案例驗證：
+   - OAuth state 正確、竄改、過期三種情境。
+   - `#N/A` 有 cache 時只替換錯誤 cell。
+   - `#N/A` 無 cache 時 row 保留於 payload。
+   - HTML escaping 與數字 `0` 顯示。
+5. `npm start`，確認 `/`、`/health`、必要前端 assets 回傳 `200`。
+6. 確認 `/server.js`、`/supabase/schema.sql`、`/comm.md` 回傳 `404`。
+7. `npm audit --omit=dev`，記錄仍存在的漏洞與不能非破壞性修正的項目。
 
-改成：
+## 5. 後續 branches
 
-```js
-setSyncMode("auto", { persist: false });
-```
-
-說明：預設啟用 auto 模式，讓 `configureAutoSync()` 在登入後自動建立 `autoSyncTimer`，不需要使用者手動切換。
-
----
-
-## 3. 不得進行的修改
-
-- 不得修改 `REFRESH_MS`（維持 60 秒）。
-- 不得修改 `triggerImmediateRefresh`、`syncNow`、`loadData`、`configureAutoSync` 的函式邏輯。
-- 不得修改任何 CSS、SVG 圖表、或其他功能。
-- 不得修改 `server.js`。
-
----
-
-## 4. 驗證方式
-
-1. 啟動本地 server：`node server.js`，開啟 `http://localhost:3000`，登入後觀察：
-   - **開頁**：瀏覽器 Network tab 應看到 `/api/sync` 被呼叫（確認有打 Google Sheets）。
-   - **設定面板**：「同步模式」選項應預設顯示「自動」而非「手動」。
-2. 切換到其他 tab 等待 30 秒以上，再切回來，Network tab 應再次看到 `/api/sync`。
-3. 等待 5 分鐘，應自動觸發一次 sync（可觀察 server log 的 `syncNow` 訊息）。
-4. 在 30 秒內連續切換 tab，應只觸發一次 sync（防抖保護正常）。
-5. 檢查瀏覽器 console 沒有新增的 JS 錯誤。
-
----
-
-## 5. 完成後
-
-依照 comm.md 最新規則，把完成摘要寫入 `docs/CODEX_RESULT.md`（覆寫，不要累加），不需要在聊天視窗整段貼出摘要全文，跟使用者說一句已完成即可。
+1. `fix_atomic_portfolio_sync`：transaction/RPC、sync lock、token table RLS、索引與 retention。
+2. `fix_dashboard_logic_and_charts`：KPI baseline、負報酬率圖、相關 UI 邊界案例。
+3. `perf_dashboard_loading`：logo、bootstrap round trips、payload unchanged check、history lazy load、本機 snapshot。

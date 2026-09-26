@@ -19,7 +19,6 @@ const ALLOWED_RETURN_ORIGINS = new Set(ALLOWED_ORIGINS);
 const API_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const issuedApiTokens = new Map();
 const GOOGLE_LINK_STATE_TTL_MS = 1000 * 60 * 10;
-const pendingGoogleLinkStates = new Map();
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -76,12 +75,6 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "1mb" }));
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
-
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"];
 const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
 
@@ -110,7 +103,23 @@ function isGoogleReauthError(error) {
   return false;
 }
 
-app.use(express.static(__dirname));
+function createOAuth2Client() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+}
+
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+for (const assetName of ["index.html", "stinvest_logo3.png", "settings-icon.png"]) {
+  app.get(`/${assetName}`, (_req, res) => {
+    res.sendFile(path.join(__dirname, assetName));
+  });
+}
 
 app.get("/health", (_req, res) => {
   res.type("text/plain").send("ok");
@@ -127,17 +136,42 @@ function normalizeReturnTo(raw) {
   }
 }
 
-function encodeState(payload) {
-  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+function createOAuthState(payload) {
+  const body = Buffer.from(JSON.stringify({
+    ...payload,
+    expiresAt: Date.now() + GOOGLE_LINK_STATE_TTL_MS,
+    nonce: crypto.randomBytes(16).toString("base64url")
+  }), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", process.env.SESSION_SECRET)
+    .update(body)
+    .digest("base64url");
+  return `${body}.${signature}`;
 }
 
-function decodeState(stateText) {
-  if (!stateText || typeof stateText !== "string") return {};
+function verifyOAuthState(stateText, expectedPurpose) {
+  if (!stateText || typeof stateText !== "string") return null;
+  const [body, signature, ...extra] = stateText.split(".");
+  if (!body || !signature || extra.length) return null;
+  const expectedSignature = crypto
+    .createHmac("sha256", process.env.SESSION_SECRET)
+    .update(body)
+    .digest("base64url");
+  const actualBuffer = Buffer.from(signature, "utf8");
+  const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+  if (
+    actualBuffer.length !== expectedBuffer.length
+    || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
   try {
-    const json = Buffer.from(stateText, "base64url").toString("utf8");
-    return JSON.parse(json);
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (payload?.purpose !== expectedPurpose) return null;
+    if (!Number.isFinite(payload?.expiresAt) || Date.now() > payload.expiresAt) return null;
+    return payload;
   } catch (_err) {
-    return {};
+    return null;
   }
 }
 
@@ -151,22 +185,11 @@ function issueApiToken(tokens) {
 }
 
 function issueGoogleLinkState({ userId, returnTo }) {
-  const stateId = crypto.randomBytes(24).toString("base64url");
-  pendingGoogleLinkStates.set(stateId, {
+  return createOAuthState({
+    purpose: "link",
     userId,
-    returnTo: normalizeReturnTo(returnTo),
-    expiresAt: Date.now() + GOOGLE_LINK_STATE_TTL_MS
+    returnTo: normalizeReturnTo(returnTo)
   });
-  return stateId;
-}
-
-function consumeGoogleLinkState(stateId) {
-  if (!stateId || typeof stateId !== "string") return null;
-  const item = pendingGoogleLinkStates.get(stateId);
-  if (!item) return null;
-  pendingGoogleLinkStates.delete(stateId);
-  if (Date.now() > item.expiresAt) return null;
-  return item;
 }
 
 function getTokensFromApiToken(apiToken) {
@@ -330,6 +353,11 @@ function isInvalidSheetPrice(value) {
   return normalized === "#N/A" || normalized === "#NA";
 }
 
+function isSheetErrorValue(value) {
+  const normalized = String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  return ["#N/A", "#NA", "#VALUE!", "#REF!", "#DIV/0!", "#NUM!", "#NAME?"].includes(normalized);
+}
+
 function buildCachedHoldingRowMap(valueRanges) {
   const rows = valueRanges?.[0]?.values || [];
   if (!rows.length) return new Map();
@@ -358,21 +386,21 @@ function buildCachedHoldingRowMap(valueRanges) {
 function mergeCachedRowsForInvalidPrices(sheetData, cachedPayload) {
   const rows = sheetData?.valueRanges?.[0]?.values || [];
   if (!rows.length) {
-    return { sheetData, replaced: 0, skipped: 0 };
+    return { sheetData, replaced: 0, preserved: 0 };
   }
 
   const headerRow = rows[0] || [];
   const nameIndex = findIndexByCandidates(headerRow, ["股票/ETF", "標的"]);
   const priceIndex = findIndexByCandidates(headerRow, ["股價"]);
   if (nameIndex < 0 || priceIndex < 0) {
-    return { sheetData, replaced: 0, skipped: 0 };
+    return { sheetData, replaced: 0, preserved: 0 };
   }
 
   const cachedRows = buildCachedHoldingRowMap(cachedPayload?.valueRanges);
   const nextRows = [headerRow];
   let currentAccount = "未分類";
   let replaced = 0;
-  let skipped = 0;
+  let preserved = 0;
 
   rows.slice(1).forEach((row) => {
     const name = getCell(row, nameIndex);
@@ -389,16 +417,32 @@ function mergeCachedRowsForInvalidPrices(sheetData, cachedPayload) {
 
     const cachedRow = cachedRows.get(`${currentAccount}\u0000${name}`);
     if (cachedRow) {
-      nextRows.push(cachedRow);
+      const width = Math.max(row.length, cachedRow.length);
+      const mergedRow = Array.from({ length: width }, (_unused, index) => {
+        const currentValue = row[index];
+        const cachedValue = cachedRow[index];
+        if (
+          isSheetErrorValue(currentValue)
+          && cachedValue !== undefined
+          && cachedValue !== null
+          && String(cachedValue).trim() !== ""
+          && !isSheetErrorValue(cachedValue)
+        ) {
+          return cachedValue;
+        }
+        return currentValue;
+      });
+      nextRows.push(mergedRow);
       replaced += 1;
       return;
     }
 
-    skipped += 1;
+    nextRows.push(row);
+    preserved += 1;
   });
 
-  if (!replaced && !skipped) {
-    return { sheetData, replaced, skipped };
+  if (!replaced && !preserved) {
+    return { sheetData, replaced, preserved };
   }
 
   const nextValueRanges = [...(sheetData.valueRanges || [])];
@@ -413,7 +457,7 @@ function mergeCachedRowsForInvalidPrices(sheetData, cachedPayload) {
       valueRanges: nextValueRanges
     },
     replaced,
-    skipped
+    preserved
   };
 }
 
@@ -478,6 +522,7 @@ function buildPortfolioItemsFromSheet(valueRanges, { userId, sheetId, logId, sou
 }
 
 async function fetchSheetDataBySpreadsheetId(tokens, targetSpreadsheetId, ranges = DEFAULT_RANGES) {
+  const oauth2Client = createOAuth2Client();
   oauth2Client.setCredentials(tokens);
   const sheets = google.sheets({ version: "v4", auth: oauth2Client });
   const response = await sheets.spreadsheets.values.batchGet({
@@ -633,9 +678,6 @@ setInterval(() => {
   for (const [k, v] of issuedApiTokens.entries()) {
     if (now > v.expiresAt) issuedApiTokens.delete(k);
   }
-  for (const [k, v] of pendingGoogleLinkStates.entries()) {
-    if (now > v.expiresAt) pendingGoogleLinkStates.delete(k);
-  }
 }, 1000 * 60 * 30).unref();
 
 app.post("/api/google/connect-url", async (req, res) => {
@@ -646,6 +688,7 @@ app.post("/api/google/connect-url", async (req, res) => {
     userId: user.id,
     returnTo
   });
+  const oauth2Client = createOAuth2Client();
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
@@ -660,11 +703,12 @@ app.post("/api/google/connect-url", async (req, res) => {
 
 app.get("/auth/google", (req, res) => {
   const returnTo = normalizeReturnTo(req.query.returnTo);
+  const oauth2Client = createOAuth2Client();
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: SCOPES,
-    state: encodeState({ returnTo })
+    state: createOAuthState({ purpose: "legacy", returnTo })
   });
   res.redirect(authUrl);
 });
@@ -676,9 +720,14 @@ app.get("/oauth2/callback", async (req, res) => {
   }
 
   try {
-    const { tokens } = await oauth2Client.getToken(code);
     const stateText = typeof req.query.state === "string" ? req.query.state : "";
-    const linkedState = consumeGoogleLinkState(stateText);
+    const linkedState = verifyOAuthState(stateText, "link");
+    const legacyState = linkedState ? null : verifyOAuthState(stateText, "legacy");
+    if (!linkedState && !legacyState) {
+      return res.status(400).send("Invalid or expired OAuth state. Please start authorization again.");
+    }
+    const oauth2Client = createOAuth2Client();
+    const { tokens } = await oauth2Client.getToken(code);
     if (linkedState?.userId) {
       let refreshToken = tokens.refresh_token;
       if (!refreshToken) {
@@ -703,8 +752,7 @@ app.get("/oauth2/callback", async (req, res) => {
 
     req.session.tokens = tokens;
     const apiToken = issueApiToken(tokens);
-    const state = decodeState(stateText);
-    const returnTo = normalizeReturnTo(state.returnTo);
+    const returnTo = normalizeReturnTo(legacyState?.returnTo);
     req.session.save(() => {
       if (returnTo) {
         const to = new URL(returnTo);
@@ -864,6 +912,22 @@ app.get("/api/portfolio-cached", async (req, res) => {
   }
 });
 
+async function markSyncLogFailed(syncLogId, error) {
+  if (!syncLogId) return;
+  try {
+    await supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
+      method: "PATCH",
+      body: {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        error_message: String(error?.message || error).slice(0, 1000)
+      }
+    });
+  } catch (logError) {
+    console.error("Sync log update failed:", logError);
+  }
+}
+
 app.post("/api/sync", async (req, res) => {
   let syncLogId = "";
   const syncStartedAt = Date.now();
@@ -969,12 +1033,12 @@ app.post("/api/sync", async (req, res) => {
 
     const invalidPriceMerge = mergeCachedRowsForInvalidPrices(sheetData, cachedPayload);
     sheetData = invalidPriceMerge.sheetData;
-    if (invalidPriceMerge.replaced || invalidPriceMerge.skipped) {
+    if (invalidPriceMerge.replaced || invalidPriceMerge.preserved) {
       timings.push({
         label: "sheet:invalid_price_rows",
         ms: 0,
         replaced: invalidPriceMerge.replaced,
-        skipped: invalidPriceMerge.skipped
+        preserved: invalidPriceMerge.preserved
       });
     }
 
@@ -1063,25 +1127,12 @@ app.post("/api/sync", async (req, res) => {
     });
   } catch (error) {
     console.error("Sync error:", error);
+    await markSyncLogFailed(syncLogId, error);
     if (error?.code === "GoogleNotLinked" || isGoogleReauthError(error)) {
       return res.status(401).json({
         error: "GoogleNotLinked",
         message: "Google authorization expired. Please reconnect Google Sheets access."
       });
-    }
-    if (syncLogId) {
-      try {
-        await supabaseRequest(`/rest/v1/sync_logs?id=eq.${encodeURIComponent(syncLogId)}`, {
-          method: "PATCH",
-          body: {
-            status: "failed",
-            finished_at: new Date().toISOString(),
-            error_message: String(error?.message || error).slice(0, 1000)
-          }
-        });
-      } catch (logError) {
-        console.error("Sync log update failed:", logError);
-      }
     }
 
     return res.status(500).json({
@@ -1138,6 +1189,15 @@ app.post("/api/unbind", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== "test") {
+  app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+}
+
+export {
+  app,
+  createOAuthState,
+  verifyOAuthState,
+  mergeCachedRowsForInvalidPrices
+};
