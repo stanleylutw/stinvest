@@ -1473,6 +1473,9 @@
     const AUTO_SYNC_MS = 5 * 60 * 1000;
     const STALE_CACHE_MS = 30 * 1000;
     const SYNC_MODE_KEY_PREFIX = "stinvest_sync_mode_";
+    const PORTFOLIO_CACHE_DB_NAME = "stinvest_dashboard_cache";
+    const PORTFOLIO_CACHE_DB_VERSION = 1;
+    const PORTFOLIO_CACHE_STORE = "portfolio_cache";
 
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
@@ -1554,6 +1557,7 @@
     let currentLinkedSheetRowId = "";
     let appStartupPromise = null;
     let loadDataPromise = null;
+    let portfolioCacheDbPromise = null;
     let supabaseClient = null;
     let cachedSupabaseToken = "";
     let cachedSupabaseTokenExpiresAt = 0;
@@ -2874,7 +2878,7 @@
       }
     }
 
-    function clearDashboardForUnlinkedSheet() {
+    function clearDashboardData() {
       latestSummary = null;
       latestHoldings = [];
       latestGroupSummaries = new Map();
@@ -2906,7 +2910,10 @@
       renderDistribution([], null);
       renderHistoryTrendChart([]);
       renderHoldings([], new Map());
+    }
 
+    function clearDashboardForUnlinkedSheet() {
+      clearDashboardData();
       sheetUrlInput.value = "";
       currentLinkedSheetRowId = "";
       setSheetBindStatus("尚未綁定 Google Sheet");
@@ -2952,6 +2959,7 @@
     async function loadLinkedSheet(userId) {
       const t0 = performance.now();
       if (!supabaseClient || !userId) return;
+      const previousSheetId = currentLinkedSheetRowId;
       addDebugLog("INFO", "loadLinkedSheet start", { userId });
       const { data, error } = await supabaseClient
         .from("user_sheets")
@@ -2967,6 +2975,7 @@
       }
       const row = Array.isArray(data) && data.length ? data[0] : null;
       if (!row) {
+        if (previousSheetId) await deletePortfolioCache(userId, previousSheetId);
         currentLinkedSheetRowId = "";
         btnSyncNow.disabled = true;
         btnUnbindSheet.disabled = true;
@@ -2981,7 +2990,8 @@
         });
         return;
       }
-      if (currentLinkedSheetRowId && currentLinkedSheetRowId !== row.id) {
+      if (previousSheetId && previousSheetId !== row.id) {
+        await deletePortfolioCache(userId, previousSheetId);
         clearDashboardForUnlinkedSheet();
       }
       currentLinkedSheetRowId = row.id || "";
@@ -3016,6 +3026,8 @@
       btnSyncNow.disabled = true;
       setSheetBindStatus("解除綁定中（1/2：清除快取資料）...");
       setSyncStatus("解除綁定中...");
+      const unboundUserId = currentUserId;
+      const unboundSheetId = currentLinkedSheetRowId;
       try {
         const sbAccessToken = await getSupabaseAccessToken();
         if (!sbAccessToken) {
@@ -3040,6 +3052,7 @@
           throw new Error(parsed?.message || raw || "解除綁定失敗");
         }
 
+        await deletePortfolioCache(unboundUserId, unboundSheetId);
         currentLinkedSheetRowId = "";
         sheetUrlInput.value = "";
         clearDashboardForUnlinkedSheet();
@@ -3186,6 +3199,13 @@
             effectiveSyncedAt: syncPayload.finishedAt || "",
             effectiveSyncLogId: syncPayload.syncLogId || ""
           });
+          await writePortfolioCache({
+            userId: currentUserId,
+            sheetId: currentLinkedSheetRowId,
+            syncLogId: syncPayload.syncLogId || "",
+            cachedAt: syncPayload.finishedAt || "",
+            data: syncPayload.data
+          });
         } else {
           await loadData();
         }
@@ -3232,6 +3252,8 @@
 
     async function logoutSupabase() {
       if (!supabaseClient) return;
+      const signedOutUserId = currentUserId;
+      if (signedOutUserId) await deletePortfolioCachesForUser(signedOutUserId);
       await supabaseClient.auth.signOut();
       localStorage.removeItem(API_TOKEN_STORAGE_KEY);
       location.reload();
@@ -3338,6 +3360,8 @@
           userId: session?.user?.id || ""
         });
         if (event === "SIGNED_OUT") {
+          const signedOutUserId = currentUserId;
+          if (signedOutUserId) void deletePortfolioCachesForUser(signedOutUserId);
           cacheSupabaseSession(null);
           currentUserId = "";
           currentLinkedSheetRowId = "";
@@ -3351,6 +3375,7 @@
           // If a different user is signing in, clear stale data immediately
           // to prevent the previous user's data from flashing on screen.
           if (currentUserId && currentUserId !== session.user.id) {
+            void deletePortfolioCachesForUser(currentUserId);
             currentUserId = "";
             currentLinkedSheetRowId = "";
             clearDashboardForUnlinkedSheet();
@@ -3383,6 +3408,135 @@
       if (!currentLinkedSheetRowId) return API_CACHED_URL;
       const joiner = API_CACHED_URL.includes("?") ? "&" : "?";
       return `${API_CACHED_URL}${joiner}sheet_id=${encodeURIComponent(currentLinkedSheetRowId)}`;
+    }
+
+    function portfolioCacheKey(userId, sheetId) {
+      return `${userId}:${sheetId}`;
+    }
+
+    function openPortfolioCacheDb() {
+      if (!window.indexedDB) return Promise.resolve(null);
+      if (portfolioCacheDbPromise) return portfolioCacheDbPromise;
+
+      portfolioCacheDbPromise = new Promise((resolve, reject) => {
+        const request = window.indexedDB.open(PORTFOLIO_CACHE_DB_NAME, PORTFOLIO_CACHE_DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          const store = db.objectStoreNames.contains(PORTFOLIO_CACHE_STORE)
+            ? request.transaction.objectStore(PORTFOLIO_CACHE_STORE)
+            : db.createObjectStore(PORTFOLIO_CACHE_STORE, { keyPath: "key" });
+          if (!store.indexNames.contains("userId")) {
+            store.createIndex("userId", "userId", { unique: false });
+          }
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          db.onversionchange = () => {
+            db.close();
+            portfolioCacheDbPromise = null;
+          };
+          resolve(db);
+        };
+        request.onerror = () => reject(request.error || new Error("Unable to open IndexedDB cache"));
+        request.onblocked = () => reject(new Error("IndexedDB cache upgrade is blocked"));
+      }).catch((error) => {
+        portfolioCacheDbPromise = null;
+        addDebugLog("WARN", "IndexedDB cache unavailable", { message: String(error?.message || error) });
+        return null;
+      });
+
+      return portfolioCacheDbPromise;
+    }
+
+    async function readPortfolioCache(userId, sheetId) {
+      if (!userId || !sheetId) return null;
+      const db = await openPortfolioCacheDb();
+      if (!db) return null;
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(PORTFOLIO_CACHE_STORE, "readonly");
+          const request = tx.objectStore(PORTFOLIO_CACHE_STORE).get(portfolioCacheKey(userId, sheetId));
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error || tx.error || new Error("IndexedDB cache read failed"));
+          tx.onabort = () => reject(tx.error || new Error("IndexedDB cache read aborted"));
+        });
+      } catch (error) {
+        addDebugLog("WARN", "IndexedDB cache read failed", { message: String(error?.message || error) });
+        return null;
+      }
+    }
+
+    async function writePortfolioCache({ userId, sheetId, syncLogId, cachedAt, data }) {
+      if (!userId || !sheetId || !syncLogId || !data) return false;
+      const db = await openPortfolioCacheDb();
+      if (!db) return false;
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(PORTFOLIO_CACHE_STORE, "readwrite");
+          tx.objectStore(PORTFOLIO_CACHE_STORE).put({
+            key: portfolioCacheKey(userId, sheetId),
+            userId,
+            sheetId,
+            syncLogId,
+            cachedAt: cachedAt || "",
+            data,
+            savedAt: new Date().toISOString()
+          });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error("IndexedDB cache write failed"));
+          tx.onabort = () => reject(tx.error || new Error("IndexedDB cache write aborted"));
+        });
+        return true;
+      } catch (error) {
+        addDebugLog("WARN", "IndexedDB cache write failed", { message: String(error?.message || error) });
+        return false;
+      }
+    }
+
+    async function deletePortfolioCache(userId, sheetId) {
+      if (!userId || !sheetId) return false;
+      const db = await openPortfolioCacheDb();
+      if (!db) return false;
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(PORTFOLIO_CACHE_STORE, "readwrite");
+          tx.objectStore(PORTFOLIO_CACHE_STORE).delete(portfolioCacheKey(userId, sheetId));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error("IndexedDB cache delete failed"));
+          tx.onabort = () => reject(tx.error || new Error("IndexedDB cache delete aborted"));
+        });
+        return true;
+      } catch (error) {
+        addDebugLog("WARN", "IndexedDB cache delete failed", { message: String(error?.message || error) });
+        return false;
+      }
+    }
+
+    async function deletePortfolioCachesForUser(userId) {
+      if (!userId) return false;
+      const db = await openPortfolioCacheDb();
+      if (!db) return false;
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(PORTFOLIO_CACHE_STORE, "readwrite");
+          const index = tx.objectStore(PORTFOLIO_CACHE_STORE).index("userId");
+          const request = index.openCursor(window.IDBKeyRange.only(userId));
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            cursor.delete();
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error || tx.error || new Error("IndexedDB user cache delete failed"));
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error("IndexedDB user cache delete failed"));
+          tx.onabort = () => reject(tx.error || new Error("IndexedDB user cache delete aborted"));
+        });
+        return true;
+      } catch (error) {
+        addDebugLog("WARN", "IndexedDB user cache delete failed", { message: String(error?.message || error) });
+        return false;
+      }
     }
 
     function normalizeCachedPortfolioRow(row) {
@@ -3558,6 +3712,7 @@
 
     async function performLoadData() {
       const t0 = performance.now();
+      let renderedLocalCache = null;
       addDebugLog("INFO", "loadData start");
       lastRefreshTriggeredAt = Date.now();
       statusText.textContent = "更新中...";
@@ -3570,6 +3725,24 @@
         let sbAccessToken = "";
 
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
+          if (!lastRenderedSyncLogId && currentLinkedSheetRowId) {
+            const localT0 = performance.now();
+            const localCache = await readPortfolioCache(currentUserId, currentLinkedSheetRowId);
+            if (localCache?.data && localCache?.syncLogId) {
+              renderDashboardData(localCache.data, {
+                loadedFromCache: true,
+                effectiveSyncedAt: localCache.cachedAt || "",
+                effectiveSyncLogId: localCache.syncLogId
+              });
+              renderedLocalCache = localCache;
+              statusText.textContent = "已顯示本機快取，確認更新中...";
+              addDebugLog("INFO", "IndexedDB cache rendered", {
+                syncLogId: localCache.syncLogId,
+                elapsedMs: Math.round(performance.now() - localT0)
+              });
+            }
+          }
+
           const cacheT0 = performance.now();
           let cacheJson = null;
           const preferredCache = await loadPreferredCachedPortfolio();
@@ -3605,6 +3778,10 @@
             };
           }
           if (!cacheJson) {
+            if (renderedLocalCache) {
+              await deletePortfolioCache(currentUserId, currentLinkedSheetRowId);
+              renderedLocalCache = null;
+            }
             throw new Error("No synced cache found. Please run sync first.");
           }
           data = cacheJson.data || null;
@@ -3682,6 +3859,15 @@
           effectiveSyncedAt,
           effectiveSyncLogId
         });
+        if (SUPABASE_LOGIN_ENABLED && currentUserId && currentLinkedSheetRowId && effectiveSyncLogId) {
+          await writePortfolioCache({
+            userId: currentUserId,
+            sheetId: currentLinkedSheetRowId,
+            syncLogId: effectiveSyncLogId,
+            cachedAt: effectiveSyncedAt,
+            data
+          });
+        }
         addDebugLog("INFO", "loadData done", {
           loadedFromCache,
           elapsedMs: Math.round(performance.now() - t0)
@@ -3694,6 +3880,18 @@
           message: String(err?.message || err)
         });
         const messageText = String(err?.message || "");
+        if (renderedLocalCache) {
+          statusText.textContent = "已顯示本機快取（雲端確認失敗）";
+          addDebugLog("WARN", "Keeping IndexedDB cache after cloud revalidation failure", {
+            syncLogId: renderedLocalCache.syncLogId
+          });
+          return {
+            ok: true,
+            effectiveSyncedAt: renderedLocalCache.cachedAt || "",
+            loadedFromCache: true,
+            stale: true
+          };
+        }
         if (
           messageText.includes("Please bind Google Sheet URL first")
           || messageText.includes("NoLinkedSheet")
@@ -3703,7 +3901,7 @@
           clearDashboardForUnlinkedSheet();
           statusText.textContent = "請先綁定 Google Sheet";
         } else if (messageText.includes("No synced cache found")) {
-          clearDashboardForUnlinkedSheet();
+          clearDashboardData();
           statusText.textContent = "請先同步資料";
         } else if (messageText.includes("Unauthorized after login redirect")) {
           statusText.textContent = "更新失敗（授權逾時，請重新整理重試）";
