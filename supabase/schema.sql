@@ -112,8 +112,15 @@ create policy "user_sheets_owner_all" on public.user_sheets
 for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "sync_logs_owner_all" on public.sync_logs;
-create policy "sync_logs_owner_all" on public.sync_logs
-for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "sync_logs_owner_select" on public.sync_logs;
+create policy "sync_logs_owner_select" on public.sync_logs
+for select using (auth.uid() = user_id);
+
+revoke all on table public.sync_logs from public, anon;
+revoke insert, update, delete, truncate, references, trigger
+  on table public.sync_logs from authenticated;
+grant select on table public.sync_logs to authenticated;
+grant select, insert, update, delete on table public.sync_logs to service_role;
 
 drop policy if exists "portfolio_items_owner_all" on public.portfolio_items;
 create policy "portfolio_items_owner_all" on public.portfolio_items

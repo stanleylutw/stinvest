@@ -3385,6 +3385,109 @@
       return `${API_CACHED_URL}${joiner}sheet_id=${encodeURIComponent(currentLinkedSheetRowId)}`;
     }
 
+    function normalizeCachedPortfolioRow(row) {
+      if (!row?.payload_json) return null;
+      return {
+        source: "supabase-direct",
+        cachedAt: row.finished_at || null,
+        syncLogId: row.id || null,
+        rowCount: row.row_count ?? null,
+        spreadsheetId: row.spreadsheet_id || null,
+        data: row.payload_json
+      };
+    }
+
+    async function loadCachedPortfolioFromSupabase() {
+      const baseQuery = (select) => supabaseClient
+        .from("sync_logs")
+        .select(select)
+        .eq("user_id", currentUserId)
+        .eq("sheet_id", currentLinkedSheetRowId)
+        .eq("status", "success");
+
+      if (!lastRenderedSyncLogId) {
+        const { data, error } = await baseQuery("id, finished_at, row_count, spreadsheet_id, payload_json")
+          .order("finished_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        return normalizeCachedPortfolioRow(data);
+      }
+
+      const { data: metadata, error: metadataError } = await baseQuery(
+        "id, finished_at, row_count, spreadsheet_id"
+      )
+        .order("finished_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (metadataError) throw metadataError;
+      if (!metadata) return null;
+      if (metadata.id === lastRenderedSyncLogId) {
+        return {
+          notModified: true,
+          cachedAt: metadata.finished_at || lastRenderedSyncedAt,
+          syncLogId: metadata.id
+        };
+      }
+
+      const { data: payloadRow, error: payloadError } = await baseQuery("payload_json")
+        .eq("id", metadata.id)
+        .limit(1)
+        .maybeSingle();
+      if (payloadError) throw payloadError;
+      return normalizeCachedPortfolioRow({ ...metadata, ...payloadRow });
+    }
+
+    async function loadCachedPortfolioFromRender(sbAccessToken) {
+      const cacheHeaders = {
+        Authorization: `Bearer ${sbAccessToken}`
+      };
+      if (lastRenderedSyncLogId) {
+        cacheHeaders["If-None-Match"] = `"${lastRenderedSyncLogId}"`;
+      }
+      const cacheRes = await fetch(getCachedPortfolioUrl(), {
+        cache: "no-store",
+        headers: cacheHeaders
+      });
+      if (cacheRes.status === 304 && lastRenderedSyncLogId) {
+        return {
+          notModified: true,
+          cachedAt: lastRenderedSyncedAt,
+          syncLogId: lastRenderedSyncLogId
+        };
+      }
+      if (cacheRes.ok) return cacheRes.json();
+
+      const raw = await cacheRes.text();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_err) {
+        parsed = null;
+      }
+      const error = new Error(parsed?.message || raw || "Cache read failed");
+      error.code = parsed?.error || "CacheReadFailed";
+      throw error;
+    }
+
+    async function loadPreferredCachedPortfolio() {
+      try {
+        return {
+          cacheJson: await loadCachedPortfolioFromSupabase(),
+          directError: null
+        };
+      } catch (directError) {
+        const sbAccessToken = await getSupabaseAccessToken();
+        if (!sbAccessToken) throw directError;
+        return {
+          cacheJson: await loadCachedPortfolioFromRender(sbAccessToken),
+          directError
+        };
+      }
+    }
+
     function formatRelativeSyncAge(value) {
       const ts = value ? new Date(value).getTime() : NaN;
       if (!Number.isFinite(ts)) return "";
@@ -3467,63 +3570,47 @@
         let sbAccessToken = "";
 
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
-          sbAccessToken = await getSupabaseAccessToken();
-          if (sbAccessToken) {
-            const cacheT0 = performance.now();
-            const cacheHeaders = {
-              Authorization: `Bearer ${sbAccessToken}`
-            };
-            if (lastRenderedSyncLogId) {
-              cacheHeaders["If-None-Match"] = `"${lastRenderedSyncLogId}"`;
-            }
-            const cacheRes = await fetch(getCachedPortfolioUrl(), {
-              cache: "no-store",
-              headers: cacheHeaders
-            });
-            addDebugLog("DEBUG", "cache fetch finished", {
-              status: cacheRes.status,
+          const cacheT0 = performance.now();
+          let cacheJson = null;
+          const preferredCache = await loadPreferredCachedPortfolio();
+          cacheJson = preferredCache.cacheJson;
+          if (preferredCache.directError) {
+            addDebugLog("WARN", "Supabase direct cache read failed; used Render fallback", {
+              message: String(preferredCache.directError?.message || preferredCache.directError),
               elapsedMs: Math.round(performance.now() - cacheT0)
             });
-            if (cacheRes.status === 304 && lastRenderedSyncLogId) {
-              statusText.textContent = "已更新（快取未變更）";
-              updatedAt.textContent = lastRenderedSyncedAt
-                ? `${new Date(lastRenderedSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(lastRenderedSyncedAt)}）`
-                : "--";
-              addDebugLog("INFO", "loadData done (not modified)", {
-                syncLogId: lastRenderedSyncLogId,
-                elapsedMs: Math.round(performance.now() - t0)
-              });
-              return {
-                ok: true,
-                effectiveSyncedAt: lastRenderedSyncedAt,
-                loadedFromCache: true,
-                unchanged: true
-              };
-            } else if (cacheRes.ok) {
-              const cacheJson = await cacheRes.json();
-              data = cacheJson.data || null;
-              loadedFromCache = !!data;
-              effectiveSyncedAt = cacheJson.cachedAt || "";
-              effectiveSyncLogId = cacheJson.syncLogId || "";
-            } else {
-              const raw = await cacheRes.text();
-              let parsed = null;
-              try {
-                parsed = JSON.parse(raw);
-              } catch (_err) {
-                parsed = null;
-              }
-              addDebugLog("WARN", "cache fetch returned non-ok", {
-                status: cacheRes.status,
-                error: parsed?.error || "",
-                message: parsed?.message || raw
-              });
-              if (["NoLinkedSheet", "NoCache", "Unauthorized"].includes(parsed?.error)) {
-                throw new Error(parsed?.message || parsed?.error);
-              }
-              throw new Error(parsed?.message || raw || "Cache read failed");
-            }
+          } else {
+            addDebugLog("DEBUG", "Supabase direct cache read finished", {
+              found: !!cacheJson,
+              notModified: !!cacheJson?.notModified,
+              elapsedMs: Math.round(performance.now() - cacheT0)
+            });
           }
+
+          if (cacheJson?.notModified) {
+            lastRenderedSyncedAt = cacheJson.cachedAt || lastRenderedSyncedAt;
+            statusText.textContent = "已更新（快取未變更）";
+            updatedAt.textContent = lastRenderedSyncedAt
+              ? `${new Date(lastRenderedSyncedAt).toLocaleString("zh-TW")}（${formatRelativeSyncAge(lastRenderedSyncedAt)}）`
+              : "--";
+            addDebugLog("INFO", "loadData done (not modified)", {
+              syncLogId: cacheJson.syncLogId || lastRenderedSyncLogId,
+              elapsedMs: Math.round(performance.now() - t0)
+            });
+            return {
+              ok: true,
+              effectiveSyncedAt: lastRenderedSyncedAt,
+              loadedFromCache: true,
+              unchanged: true
+            };
+          }
+          if (!cacheJson) {
+            throw new Error("No synced cache found. Please run sync first.");
+          }
+          data = cacheJson.data || null;
+          loadedFromCache = !!data;
+          effectiveSyncedAt = cacheJson.cachedAt || "";
+          effectiveSyncLogId = cacheJson.syncLogId || "";
         }
 
         if (SUPABASE_LOGIN_ENABLED && currentUserId && !data) {
