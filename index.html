@@ -590,13 +590,53 @@
     }
 
     .hero-logo {
-      width: var(--hero-logo-size);
-      height: var(--hero-logo-size);
+      width: 100%;
+      height: 100%;
       border-radius: 9px;
       object-fit: cover;
-      flex: 0 0 auto;
       border: 0;
       background: #fff;
+      display: block;
+    }
+
+    .hero-logo-btn {
+      width: var(--hero-logo-size);
+      height: var(--hero-logo-size);
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .hero-logo-btn:not(:disabled):active .hero-logo {
+      transform: scale(0.94);
+    }
+
+    .hero-logo-btn:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.35);
+      outline-offset: 3px;
+    }
+
+    .hero-logo-btn:disabled {
+      cursor: default;
+      opacity: 0.68;
+    }
+
+    .hero-logo-btn.is-syncing .hero-logo {
+      animation: logo-sync-pulse 0.9s ease-in-out infinite alternate;
+    }
+
+    @keyframes logo-sync-pulse {
+      from { transform: scale(0.92); opacity: 0.68; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero-logo-btn.is-syncing .hero-logo {
+        animation: none;
+      }
     }
 
     .hero-title {
@@ -1282,7 +1322,9 @@
       <div class="hero-head">
         <div class="hero-main">
           <div class="hero-brand">
-            <img class="hero-logo" src="./stinvest_logo3.png" alt="" />
+            <button id="btnLogoSync" class="hero-logo-btn" type="button" aria-label="立即同步" title="立即同步" disabled>
+              <img class="hero-logo" src="./stinvest_logo3.png" alt="" />
+            </button>
             <div class="hero-text">
               <h1 class="hero-title">ST投資總覽</h1>
               <div class="hero-updated"><span class="hero-updated-label">上次更新：</span><span id="updatedAt">--</span><span id="refreshSpinner" class="refresh-spinner" aria-hidden="true"></span></div>
@@ -1439,7 +1481,7 @@
 
     <div class="footer">
       <span>© 2026 Stanley All rights reserved.</span>
-      <span id="versionText">v1.0.7</span>
+      <span id="versionText">v1.0.8</span>
     </div>
   </main>
   <script>
@@ -1480,6 +1522,7 @@
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
     const refreshSpinner = document.getElementById("refreshSpinner");
+    const btnLogoSync = document.getElementById("btnLogoSync");
     const appMain = document.getElementById("appMain");
     const secAuth = document.getElementById("sec-auth");
     const btnOpenSettings = document.getElementById("btnOpenSettings");
@@ -1547,6 +1590,7 @@
     let visibleColumns = [];
     let refreshTimer = null;
     let autoSyncTimer = null;
+    let refreshingActivityCount = 0;
     let isSyncInProgress = false;
     let googleReconnectRequired = false;
     let syncMode = "auto";
@@ -2516,9 +2560,19 @@
       return `${n >= 0 ? "+" : "-"}${txt}`;
     }
 
-    function setRefreshingUI(isRefreshing) {
+    function updateRefreshingUI() {
       if (!refreshSpinner) return;
-      refreshSpinner.classList.toggle("active", !!isRefreshing);
+      refreshSpinner.classList.toggle("active", refreshingActivityCount > 0);
+    }
+
+    function beginRefreshingUI() {
+      refreshingActivityCount += 1;
+      updateRefreshingUI();
+    }
+
+    function endRefreshingUI() {
+      refreshingActivityCount = Math.max(0, refreshingActivityCount - 1);
+      updateRefreshingUI();
     }
 
     function formatCompareTimestamp(timestampText, reportDateText) {
@@ -2679,6 +2733,11 @@
       syncStatusText.textContent = `同步狀態：${message}`;
       syncStatusText.classList.toggle("error", !!isError);
       addDebugLog(isError ? "ERROR" : "INFO", "sync status", { message, isError });
+    }
+
+    function setSyncControlsDisabled(disabled) {
+      btnSyncNow.disabled = !!disabled;
+      btnLogoSync.disabled = !!disabled;
     }
 
     function initSupabaseClient() {
@@ -2951,7 +3010,7 @@
       if (!row) {
         if (previousSheetId) await deletePortfolioCache(userId, previousSheetId);
         currentLinkedSheetRowId = "";
-        btnSyncNow.disabled = true;
+        setSyncControlsDisabled(true);
         btnUnbindSheet.disabled = true;
         sheetUrlInput.value = "";
         setSheetBindStatus("尚未綁定 Google Sheet");
@@ -2966,7 +3025,7 @@
         clearDashboardForUnlinkedSheet();
       }
       currentLinkedSheetRowId = row.id || "";
-      btnSyncNow.disabled = false;
+      setSyncControlsDisabled(false);
       btnUnbindSheet.disabled = false;
       sheetUrlInput.value = row.sheet_url || row.spreadsheet_id || "";
       const synced = row.last_synced_at
@@ -3039,7 +3098,7 @@
 
       btnUnbindSheet.disabled = true;
       btnSaveSheetLink.disabled = true;
-      btnSyncNow.disabled = true;
+      setSyncControlsDisabled(true);
       setSheetBindStatus("解除綁定中（1/2：清除快取資料）...");
       setSyncStatus("解除綁定中...");
       const unboundUserId = currentUserId;
@@ -3082,7 +3141,7 @@
       } finally {
         btnSaveSheetLink.disabled = false;
         btnUnbindSheet.disabled = !currentLinkedSheetRowId;
-        btnSyncNow.disabled = !currentLinkedSheetRowId;
+        setSyncControlsDisabled(!currentLinkedSheetRowId);
       }
     }
 
@@ -3103,7 +3162,7 @@
       addDebugLog("INFO", "saveLinkedSheet start", { spreadsheetId });
       btnSaveSheetLink.disabled = true;
       btnUnbindSheet.disabled = true;
-      btnSyncNow.disabled = true;
+      setSyncControlsDisabled(true);
       try {
         setSheetBindStatus("初始化中（2/4：更新綁定設定）...");
         const { error: clearError } = await supabaseClient
@@ -3145,7 +3204,7 @@
       } finally {
         btnSaveSheetLink.disabled = false;
         btnUnbindSheet.disabled = !currentLinkedSheetRowId;
-        btnSyncNow.disabled = !currentLinkedSheetRowId;
+        setSyncControlsDisabled(!currentLinkedSheetRowId);
       }
     }
 
@@ -3168,7 +3227,10 @@
         return;
       }
       isSyncInProgress = true;
-      btnSyncNow.disabled = true;
+      setSyncControlsDisabled(true);
+      btnLogoSync.classList.add("is-syncing");
+      btnLogoSync.setAttribute("aria-busy", "true");
+      beginRefreshingUI();
       setSyncStatus(fromAuto ? "自動同步中..." : "同步中...");
       if (!fromAuto) {
         googleReconnectRequired = false;
@@ -3252,7 +3314,10 @@
         });
       } finally {
         isSyncInProgress = false;
-        btnSyncNow.disabled = !currentLinkedSheetRowId;
+        setSyncControlsDisabled(!currentLinkedSheetRowId);
+        btnLogoSync.classList.remove("is-syncing");
+        btnLogoSync.removeAttribute("aria-busy");
+        endRefreshingUI();
       }
     }
 
@@ -3284,7 +3349,7 @@
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
         btnUnbindSheet.disabled = true;
-        btnSyncNow.disabled = true;
+        setSyncControlsDisabled(true);
         syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
         setSyncMode("manual", { persist: false });
@@ -3304,7 +3369,7 @@
         btnLogout.style.display = "none";
         btnSaveSheetLink.disabled = true;
         btnUnbindSheet.disabled = true;
-        btnSyncNow.disabled = true;
+        setSyncControlsDisabled(true);
         syncModeSelect.disabled = true;
         sheetUrlInput.disabled = true;
         setSheetBindStatus("請先登入，再綁定 Google Sheet");
@@ -3747,7 +3812,7 @@
       addDebugLog("INFO", "loadData start");
       lastRefreshTriggeredAt = Date.now();
       statusText.textContent = "更新中...";
-      setRefreshingUI(true);
+      beginRefreshingUI();
       try {
         let data = null;
         let loadedFromCache = false;
@@ -3962,7 +4027,7 @@
         }
         return { ok: false, effectiveSyncedAt: "", loadedFromCache: false };
       } finally {
-        setRefreshingUI(false);
+        endRefreshingUI();
       }
     }
 
@@ -4035,6 +4100,7 @@
     btnSaveSheetLink.addEventListener("click", saveLinkedSheet);
     btnUnbindSheet.addEventListener("click", unbindLinkedSheet);
     btnSyncNow.addEventListener("click", syncNow);
+    btnLogoSync.addEventListener("click", () => syncNow({ fromAuto: false }));
     btnCopyLog.addEventListener("click", copyDebugLog);
     btnClearLog.addEventListener("click", clearDebugLog);
     syncModeSelect.addEventListener("change", () => {
