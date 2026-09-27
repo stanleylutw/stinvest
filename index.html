@@ -1481,7 +1481,7 @@
 
     <div class="footer">
       <span>© 2026 Stanley All rights reserved.</span>
-      <span id="versionText">v1.0.8</span>
+      <span id="versionText">v1.0.9</span>
     </div>
   </main>
   <script>
@@ -2159,10 +2159,13 @@
 
       const series = rows.map((r) => ({
         d: r.reportDate,
+        t: dateToMs(r.reportDate),
         y1: getSnapshotMetric(r, y1Key),
         y2: getSnapshotMetric(r, y2Key)
       }));
-      const valid = series.filter((x) => Number.isFinite(x.y1) || Number.isFinite(x.y2));
+      const valid = series.filter((x) => (
+        Number.isFinite(x.t) && (Number.isFinite(x.y1) || Number.isFinite(x.y2))
+      ));
       if (!valid.length) {
         historyTrendChart.textContent = "歷史資料不足（欄位無可用數值）";
         return;
@@ -2200,7 +2203,10 @@
       const [y1Min, y1Max] = range(y1Vals);
       const [y2Min, y2Max] = range(y2Vals);
 
-      const xAt = (i) => m.l + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+      const xMin = valid[0].t;
+      const xMax = valid[n - 1].t;
+      const xSpan = xMax - xMin;
+      const xAt = (point) => m.l + (xSpan > 0 ? ((point.t - xMin) / xSpan) * pw : pw / 2);
       const yAt1 = (v) => m.t + ph * (1 - (v - y1Min) / (y1Max - y1Min));
       const yAt2 = (v) => m.t + ph * (1 - (v - y2Min) / (y2Max - y2Min));
 
@@ -2209,7 +2215,7 @@
         valid.forEach((p, i) => {
           const v = p[key];
           if (!Number.isFinite(v)) return;
-          const x = xAt(i);
+          const x = xAt(p);
           const y = yFn(v);
           d += d ? ` L ${x} ${y}` : `M ${x} ${y}`;
         });
@@ -2218,7 +2224,7 @@
       const p1 = showY1 ? pathFrom("y1", yAt1) : "";
       const p2 = showY2 ? pathFrom("y2", yAt2) : "";
       const areaPath = showY1 && p1
-        ? `${p1} L ${xAt(valid.length - 1)} ${m.t + ph} L ${xAt(0)} ${m.t + ph} Z`
+        ? `${p1} L ${xAt(valid[n - 1])} ${m.t + ph} L ${xAt(valid[0])} ${m.t + ph} Z`
         : "";
 
       const findPeak = (key, yFn) => {
@@ -2226,7 +2232,7 @@
         valid.forEach((p, i) => {
           const v = p[key];
           if (!Number.isFinite(v)) return;
-          if (!best || v > best.v) best = { v, i, x: xAt(i), y: yFn(v) };
+          if (!best || v > best.v) best = { v, i, x: xAt(p), y: yFn(v) };
         });
         return best;
       };
@@ -2255,21 +2261,39 @@
         `;
       }).join("");
 
-      const xStep = Math.max(1, Math.ceil(n / 8));
-      const xLabelIndexes = new Set();
-      for (let i = 0; i < n; i += xStep) xLabelIndexes.add(i);
-      xLabelIndexes.add(n - 1);
-      const xLabelSorted = [...xLabelIndexes].sort((a, b) => a - b);
-      if (xLabelSorted.length >= 2) {
-        const last = xLabelSorted[xLabelSorted.length - 1];
-        const secondLast = xLabelSorted[xLabelSorted.length - 2];
-        if (last - secondLast <= xStep / 2) {
-          xLabelIndexes.delete(secondLast);
+      const xLabelIndexes = new Set([0, n - 1]);
+      if (n > 2 && xSpan > 0) {
+        const targetCount = Math.min(8, n);
+        for (let slot = 1; slot < targetCount - 1; slot += 1) {
+          const targetTime = xMin + (xSpan * slot) / (targetCount - 1);
+          let nearestIndex = 1;
+          let nearestDistance = Math.abs(valid[nearestIndex].t - targetTime);
+          for (let i = 2; i < n - 1; i += 1) {
+            const distance = Math.abs(valid[i].t - targetTime);
+            if (distance < nearestDistance) {
+              nearestIndex = i;
+              nearestDistance = distance;
+            }
+          }
+          xLabelIndexes.add(nearestIndex);
         }
       }
+      const minLabelGap = 70;
+      const xLabelSorted = [...xLabelIndexes].sort((a, b) => a - b);
+      const spacedLabelIndexes = [];
+      xLabelSorted.forEach((index) => {
+        const previous = spacedLabelIndexes[spacedLabelIndexes.length - 1];
+        if (previous === undefined || xAt(valid[index]) - xAt(valid[previous]) >= minLabelGap) {
+          spacedLabelIndexes.push(index);
+          return;
+        }
+        if (index === n - 1) spacedLabelIndexes[spacedLabelIndexes.length - 1] = index;
+      });
+      const visibleXLabelIndexes = new Set(spacedLabelIndexes);
       const xLabels = valid.map((p, i) => {
-        if (!xLabelIndexes.has(i)) return "";
-        return `<text x="${xAt(i)}" y="${m.t + ph + 22}" text-anchor="middle" font-size="11" fill="#334155">${escapeHtml(p.d)}</text>`;
+        if (!visibleXLabelIndexes.has(i)) return "";
+        const anchor = i === 0 ? "start" : (i === n - 1 ? "end" : "middle");
+        return `<text x="${xAt(p)}" y="${m.t + ph + 22}" text-anchor="${anchor}" font-size="11" fill="#334155">${escapeHtml(p.d)}</text>`;
       }).join("");
 
       historyTrendChart.innerHTML = `
