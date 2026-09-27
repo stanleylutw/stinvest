@@ -1126,6 +1126,7 @@
       width: 100%;
       height: auto;
       display: block;
+      touch-action: pan-y;
     }
 
     .trend-up { color: var(--gain); font-weight: 700; }
@@ -1481,7 +1482,7 @@
 
     <div class="footer">
       <span>© 2026 Stanley All rights reserved.</span>
-      <span id="versionText">v1.0.9</span>
+      <span id="versionText">v1.0.10</span>
     </div>
   </main>
   <script>
@@ -2296,6 +2297,13 @@
         return `<text x="${xAt(p)}" y="${m.t + ph + 22}" text-anchor="${anchor}" font-size="11" fill="#334155">${escapeHtml(p.d)}</text>`;
       }).join("");
 
+      const tooltipWidth = 210;
+      const tooltipHeight = showY1 && showY2 ? 68 : 48;
+      const tooltipRows = [
+        showY1 ? `<text data-history-tooltip-y1 x="12" y="39" font-size="11" fill="#2563eb"></text>` : "",
+        showY2 ? `<text data-history-tooltip-y2 x="12" y="${showY1 ? 57 : 39}" font-size="11" fill="#64748b"></text>` : ""
+      ].join("");
+
       historyTrendChart.innerHTML = `
         <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -2315,8 +2323,90 @@
           ${xLabels}
           ${showY1 ? `<text x="${m.l}" y="${13}" text-anchor="start" font-size="11" fill="#2563eb" font-weight="700">${formatMetricLabel(y1Def)}</text>` : ""}
           ${showY2 ? `<text x="${w - m.r}" y="${13}" text-anchor="end" font-size="11" fill="#64748b" font-weight="700">${formatMetricLabel(y2Def)}</text>` : ""}
+          <g data-history-hover visibility="hidden" pointer-events="none">
+            <line data-history-crosshair y1="${m.t}" y2="${m.t + ph}" stroke="#475569" stroke-width="1" stroke-dasharray="4 3" />
+            ${showY1 ? `<circle data-history-dot-y1 r="4" fill="#fff" stroke="#2563eb" stroke-width="2" />` : ""}
+            ${showY2 ? `<circle data-history-dot-y2 r="4" fill="#fff" stroke="#64748b" stroke-width="2" />` : ""}
+            <g data-history-tooltip>
+              <rect width="${tooltipWidth}" height="${tooltipHeight}" rx="6" fill="#fff" fill-opacity="0.96" stroke="#cbd5e1" />
+              <text data-history-tooltip-date x="12" y="19" font-size="11" fill="#0f172a" font-weight="700"></text>
+              ${tooltipRows}
+            </g>
+          </g>
+          <rect data-history-hit-area x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent" pointer-events="all" />
         </svg>
       `;
+
+      const svg = historyTrendChart.querySelector("svg");
+      const hitArea = svg?.querySelector("[data-history-hit-area]");
+      const hover = svg?.querySelector("[data-history-hover]");
+      if (!svg || !hitArea || !hover) return;
+
+      const crosshair = hover.querySelector("[data-history-crosshair]");
+      const y1Dot = hover.querySelector("[data-history-dot-y1]");
+      const y2Dot = hover.querySelector("[data-history-dot-y2]");
+      const tooltip = hover.querySelector("[data-history-tooltip]");
+      const dateText = hover.querySelector("[data-history-tooltip-date]");
+      const y1Text = hover.querySelector("[data-history-tooltip-y1]");
+      const y2Text = hover.querySelector("[data-history-tooltip-y2]");
+
+      const setHoverPoint = (event) => {
+        const bounds = svg.getBoundingClientRect();
+        if (!bounds.width) return;
+        const pointerX = Math.max(m.l, Math.min(w - m.r,
+          ((event.clientX - bounds.left) / bounds.width) * w
+        ));
+        let nearest = valid[0];
+        let nearestDistance = Math.abs(xAt(nearest) - pointerX);
+        for (let i = 1; i < valid.length; i += 1) {
+          const distance = Math.abs(xAt(valid[i]) - pointerX);
+          if (distance < nearestDistance) {
+            nearest = valid[i];
+            nearestDistance = distance;
+          }
+        }
+
+        const x = xAt(nearest);
+        crosshair.setAttribute("x1", x);
+        crosshair.setAttribute("x2", x);
+        if (y1Dot) {
+          const hasY1 = Number.isFinite(nearest.y1);
+          y1Dot.setAttribute("visibility", hasY1 ? "visible" : "hidden");
+          if (hasY1) {
+            y1Dot.setAttribute("cx", x);
+            y1Dot.setAttribute("cy", yAt1(nearest.y1));
+          }
+        }
+        if (y2Dot) {
+          const hasY2 = Number.isFinite(nearest.y2);
+          y2Dot.setAttribute("visibility", hasY2 ? "visible" : "hidden");
+          if (hasY2) {
+            y2Dot.setAttribute("cx", x);
+            y2Dot.setAttribute("cy", yAt2(nearest.y2));
+          }
+        }
+
+        dateText.textContent = nearest.d;
+        if (y1Text) {
+          y1Text.textContent = `${formatMetricLabel(y1Def)}：${Number.isFinite(nearest.y1) ? formatAxisValue(nearest.y1, y1Def.axis) : "--"}`;
+        }
+        if (y2Text) {
+          y2Text.textContent = `${formatMetricLabel(y2Def)}：${Number.isFinite(nearest.y2) ? formatAxisValue(nearest.y2, y2Def.axis) : "--"}`;
+        }
+        const tooltipX = x + tooltipWidth + 10 <= w - m.r
+          ? x + 10
+          : x - tooltipWidth - 10;
+        tooltip.setAttribute("transform", `translate(${Math.max(m.l, tooltipX)} ${m.t + 8})`);
+        hover.setAttribute("visibility", "visible");
+      };
+
+      hitArea.addEventListener("pointerenter", setHoverPoint);
+      hitArea.addEventListener("pointermove", setHoverPoint);
+      hitArea.addEventListener("pointerdown", setHoverPoint);
+      hitArea.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "mouse") hover.setAttribute("visibility", "hidden");
+      });
+      hitArea.addEventListener("pointercancel", () => hover.setAttribute("visibility", "hidden"));
     }
 
     function trendText(delta) {
