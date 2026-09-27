@@ -1439,7 +1439,7 @@
 
     <div class="footer">
       <span>© 2026 Stanley All rights reserved.</span>
-      <span id="versionText">版本：--</span>
+      <span id="versionText">v1.0.7</span>
     </div>
   </main>
   <script>
@@ -1480,7 +1480,6 @@
     const statusText = document.getElementById("statusText");
     const updatedAt = document.getElementById("updatedAt");
     const refreshSpinner = document.getElementById("refreshSpinner");
-    const versionText = document.getElementById("versionText");
     const appMain = document.getElementById("appMain");
     const secAuth = document.getElementById("sec-auth");
     const btnOpenSettings = document.getElementById("btnOpenSettings");
@@ -2648,21 +2647,6 @@
       });
 
       return { headerRow, summary, groups, holdings, groupSummaries };
-    }
-
-    function renderAutoVersion() {
-      const raw = document.lastModified;
-      const d = raw ? new Date(raw) : new Date();
-      if (Number.isNaN(d.getTime())) {
-        versionText.textContent = "unknown";
-        return;
-      }
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      versionText.textContent = `v${y}${m}${day}.${hh}${mm}`;
     }
 
     function isSectionExpanded(selector) {
@@ -4005,7 +3989,6 @@
       btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
     }
 
-    renderAutoVersion();
     document.querySelectorAll(".collapsible-toggle").forEach((btn, index) => {
       const section = btn.closest(".collapsible-section");
       if (!section) return;

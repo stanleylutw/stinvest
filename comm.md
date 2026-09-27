@@ -46,9 +46,106 @@ Last updated: YYYY-MM-DD HH:MM:SS [Who]
 9. Revision summary 應簡短描述「修改了什麼」，不要寫過長的開發細節。
 10. 修改 plan 時，應同時檢查文件標題、版本號、`Last updated` 與 `Revision History` 是否一致。
 11. `Revision History` 表格必須包含 `Branch` 欄，記錄對應的 working branch：
-    - 有對應 code change：填寫 branch name，例如 `perf_cache_loading`
+    - 有對應 code change：填寫 branch name，例如 `v1.1.0_perf_cache_loading`
     - 只是文件修正、無對應 code change：填 `N/A`
     - 格式：`| Version | Date Time | Summary | Who | Branch |`
+
+## App Semantic Version、Branch、Main 與 Tag 規則
+
+### 版本格式與單一顯示來源
+
+1. App release version 一律使用 Semantic Version 格式：`vMAJOR.MINOR.PATCH`，例如 `v1.0.0`、`v1.0.7`、`v1.1.0`。
+2. `index.html` 頁尾的 `#versionText` 是使用者看到的 App version，必須顯示完整的 `vX.Y.Z`。
+3. 禁止再用 `document.lastModified` 或 `vYYYYMMDD.HHMM` 充當 App release version。
+4. 日期、時間、commit SHA 若需要顯示，只能作為獨立的 build metadata；不可取代 `vX.Y.Z`，也不可讓使用者誤認為 release version。
+5. 每次修改版本時，只能保留一個明確的版本來源；不得在 HTML、JavaScript 或文件中留下彼此矛盾的 App version。
+
+### Version branch 命名與版本來源
+
+1. 所有會合併至 `main` 的實作 branch，命名格式為：
+
+```text
+vMAJOR.MINOR.PATCH_short_topic_in_snake_case
+```
+
+2. 範例：
+   - `v1.0.7_bootstrap_query_consolidation`
+   - `v1.0.8_fix_mobile_chart_labels`
+   - `v1.1.0_add_portfolio_alerts`
+3. branch 名稱最前面的 `vX.Y.Z` 是該 branch 合併完成後預期顯示的 App version。
+4. 同一條 stacked branch 鏈若依序為 `v1.0.1` 到 `v1.0.7`，最終 branch `v1.0.7_*` 合併到 `main` 後，頁面必須顯示 `v1.0.7`。
+5. branch 完成 review、準備 commit 前，必須將 `index.html` 的 `#versionText` 更新為該 branch 前綴版本，且版本修改必須包含在該 branch 的 commit 中。
+6. 不得只修改 branch 名稱而不更新頁面版本，也不得只更新頁面版本而使用沒有版本前綴的 release branch。
+
+### 合併到 `main` 的版本規則
+
+1. `main` 沒有 tag 指向目前 HEAD 時，頁面版本以「最後一個已合併 version branch 的 `vX.Y.Z`」為準。
+2. 合併 `vX.Y.Z_topic` 前，必須確認該 branch 的 `index.html` 已顯示相同的 `vX.Y.Z`，而且修改已 commit；未 commit 的 working-tree 修改不會跟著 branch merge。
+3. 合併完成後必須在 `main` 再次確認：
+
+```bash
+git branch --show-current
+git log -1 --oneline
+rg -n 'id="versionText"' index.html
+```
+
+4. 若先後合併多個版本 branch，頁面版本只能前進，不得倒退。較舊 branch 在較新版本後補合併時，不得把 `#versionText` 降回較舊版本。
+5. stacked branches 合併時，以整條鏈中最高、最後核准的 SemVer 為準；通常只需合併最末 branch，但合併前仍要確認 commit graph 與版本文字一致。
+6. merge 完成但版本不一致時，視為 release blocker；在修正並 commit 前不得 push／部署 `main`。
+
+### `main` Tag 優先規則
+
+1. 若 `main` 的目前 HEAD 有合法的 `vX.Y.Z` tag，tag 是該 commit 的權威 App version，頁面必須顯示完全相同的 `vX.Y.Z`。
+2. 「tag 在 `main`」是指 tag 精確指向 `main` 的目前 HEAD；只存在於 repo、其他 branch 或非 `main` 歷史中的 tag 不算。
+3. 若同一個 `main` commit 有多個合法 SemVer tags，以 SemVer 最高者為準；正常流程應避免同一 commit 出現多個 release tags。
+4. Git tag 不會自動修改已提交的靜態 `index.html`。因此正確順序必須是：
+   1. 決定 release tag `vX.Y.Z`。
+   2. 將 `index.html` 的 `#versionText` 更新成 `vX.Y.Z`。
+   3. commit 版本修改，確保 `main` HEAD 已包含正確版本。
+   4. 在同一個 commit 建立 annotated tag。
+   5. 先 push `main`，再 push 該 tag。
+5. 禁止先建立 tag、再另外 commit 頁面版本；這會讓 tag 指向的內容與畫面版本不一致。
+6. 已 push 的 tag 原則上不可移動或覆寫。若已發布 tag 與頁面版本不一致，應建立新的 patch version 修正，例如 `v1.0.0` 有誤時發布 `v1.0.1`，不要 force-update 公開 tag。
+
+### Release／Tag 標準流程
+
+```bash
+# 1. 確認 version branch 與頁面版本一致，且 working tree 的版本修改已 commit
+git switch vX.Y.Z_short_topic
+rg -n 'id="versionText"' index.html
+git status --short
+
+# 2. 合併最終核准 branch
+git switch main
+git merge --ff-only vX.Y.Z_short_topic
+
+# 3. 再次確認 main HEAD 與頁面版本
+git log -1 --oneline
+rg -n 'id="versionText"' index.html
+
+# 4. 建立 annotated tag；tag 必須指向包含同版本頁面的 main HEAD
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+
+# 5. Push main 與單一 release tag
+git push origin main
+git push origin vX.Y.Z
+
+# 6. 驗證 tag 精確指向 main HEAD
+git tag --points-at main
+git rev-parse main
+git rev-list -n 1 vX.Y.Z
+```
+
+### Merge／Release 必查清單
+
+1. branch 名稱是否符合 `vX.Y.Z_short_topic`。
+2. `index.html` 的 `#versionText` 是否等於 branch 前綴版本。
+3. 版本修改是否已 commit，而不是只存在 working tree。
+4. 即將合併的版本是否不低於 `main` 目前版本。
+5. 若要建立 tag，tag 名稱是否與 `#versionText` 完全一致。
+6. tag 是否建立在包含該版本文字的 `main` HEAD。
+7. `main` 與 tag 是否都成功 push，且兩者解析到同一 commit。
+8. GitHub Pages／瀏覽器 cache 更新後，線上頁尾是否顯示預期的 `vX.Y.Z`。
 
 ## Claude Code / Codex 分工規則
 
@@ -66,6 +163,8 @@ Last updated: YYYY-MM-DD HH:MM:SS [Who]
 3. 新功能完成後更新 `00_investment_dashboard_plan_vX.X.md`，包含版本號、`Last updated`、`Revision History` 與內容。
 4. Review Codex diff，輸出 `docs/REVIEW_REPORT.md`，分類 Critical / Major / Minor issue。
 5. **不直接修改 `index.html` / `server.js` 原始碼**，除非使用者明確指示。
+6. 產生 implementation plan 時指定本次預期 App version，並確認 branch 前綴符合 `vX.Y.Z`。
+7. Review 時核對 branch 前綴、`#versionText` 與預期 tag；任何不一致至少列為 Major issue，release 前視為 blocker。
 
 ### Codex 職責
 
@@ -74,6 +173,8 @@ Last updated: YYYY-MM-DD HH:MM:SS [Who]
 3. 不自行更動 Supabase schema 或 API contract，一切以 MD spec 為準。
 4. 修正 `REVIEW_REPORT.md` 中的 Critical / Major issue。
 5. **不更新 plan MD**，除非極小 typo，且須在 diff 中說明。
+6. 依照 plan 將 `index.html` 的 `#versionText` 更新為 branch 的 `vX.Y.Z`，並在完成摘要中列出實際版本。
+7. 執行 commit／merge／tag 指令前，重新檢查版本文字已 commit，且不會造成 `main` 版本倒退。
 
 ### 標準開發流程
 
@@ -114,16 +215,17 @@ Claude Code 產生 `IMPLEMENTATION_PLAN.md` 時，**必須在文件開頭加入 
 
 **Branch 命名格式：**
 ```
-short_topic_in_snake_case
+vMAJOR.MINOR.PATCH_short_topic_in_snake_case
 ```
 
 **命名範例：**
 
 | 任務類型 | 範例 |
 |---|---|
-| Bug fix / 小修正 / 文件 | `fix_sync_unauthorized_redirect` |
-| 新功能 / 架構調整 / 優化 | `perf_parallel_auth_load` |
-| 破壞相容 / 大改版 | `refactor_api_token_flow` |
+| Bug fix / 小修正 | `v1.0.8_fix_sync_unauthorized_redirect` |
+| 新功能 / 架構調整 / 優化 | `v1.1.0_perf_parallel_auth_load` |
+| 破壞相容 / 大改版 | `v2.0.0_refactor_api_token_flow` |
+| 純文件、不會合併發布 | `docs_update_collaboration_rules` |
 
 **Branch section 範本（放在 IMPLEMENTATION_PLAN.md 最前面）：**
 
@@ -132,15 +234,18 @@ short_topic_in_snake_case
 
 Before starting implementation, create and switch to the new branch:
 
-git checkout -b perf_parallel_auth_load
+git checkout -b v1.1.0_perf_parallel_auth_load
 
 Base branch: main
 ```
 
 **規則：**
-1. Branch topic 使用英文小寫與底線，簡短描述本次任務。
-2. Base branch 固定為 `main`。所有新功能 / 修正分支都從 `main` 切出，完成並通過 review 後再合併回 `main`。
+1. 會合併至 `main` 的 code branch 必須使用 `vMAJOR.MINOR.PATCH_` 前綴；topic 使用英文小寫與底線，簡短描述本次任務。
+2. Base branch 預設為 `main`。若 plan 明確定義 stacked branch 鏈，下一個版本 branch 可以前一個已 commit 的 version branch 為 base；plan 必須寫出 parent branch 與 parent commit，不可自行猜測。
 3. Codex 在 Step 4 的第一步就執行 branch 建立，之後所有修改在新 branch 上進行。
+4. 純文件且不會形成 App release 的 branch 可使用 `docs_` 前綴，不要求更新 App version。
+5. Claude Code 產生 plan 時，必須同時指定預期 App version；Codex 在 Step 4 完成前必須確認 `#versionText` 與 branch 前綴一致。
+6. 非 stacked 開發仍一律從 `main` 建立；stacked branch 只有在 plan 明確列出依賴順序時才允許。
 
 ### Step 5 通過後的自動行為
 
@@ -246,12 +351,14 @@ English correction: `...`（若使用者最後一句是英文，提供修正；�
 - Claude Code 負責判斷哪些 section 受影響。
 - 內容必須反映實際 code 行為，不能超前描述未實作的功能。
 - Codex **不負責**更新 plan MD。
+- Step 7 必須再次核對 `#versionText`、branch 前綴與預期 release tag；版本不一致時不得進入 Step 8。
 
 ### Step 8 — 建議 Codex git commit（Claude Code 提供指令）
 
 Claude Code 提供明確的 git 指令，包含：
 - 要 `git add` 的檔案清單（明確列出，不使用 `git add .`）
 - 完整 commit message（英文，說明這次做了什麼）
+- 若為 App release branch，檔案清單必須包含已更新 `#versionText` 的 `index.html`
 - 說明不 merge 到 main
 - 要求 Codex 執行後顯示 `git log --oneline -3` 確認
 
