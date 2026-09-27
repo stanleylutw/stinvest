@@ -1558,6 +1558,8 @@
     let appStartupPromise = null;
     let loadDataPromise = null;
     let portfolioCacheDbPromise = null;
+    let bootstrapPortfolioCacheReady = false;
+    let bootstrapPortfolioCache = null;
     let supabaseClient = null;
     let cachedSupabaseToken = "";
     let cachedSupabaseTokenExpiresAt = 0;
@@ -2932,6 +2934,10 @@
       }
     }
 
+    async function applyCloudSettingsRow(row) {
+      await setMoneyMasked(!!row?.money_masked, { persistCloud: false });
+    }
+
     async function loadCloudSettings(userId) {
       if (!supabaseClient || !userId) return;
       const { data, error } = await supabaseClient
@@ -2944,7 +2950,7 @@
         return;
       }
       const row = Array.isArray(data) && data.length ? data[0] : null;
-      await setMoneyMasked(!!row?.money_masked, { persistCloud: false });
+      await applyCloudSettingsRow(row);
     }
 
     function parseSpreadsheetId(inputText) {
@@ -2956,24 +2962,8 @@
       return "";
     }
 
-    async function loadLinkedSheet(userId) {
-      const t0 = performance.now();
-      if (!supabaseClient || !userId) return;
+    async function applyLinkedSheetRow(userId, row) {
       const previousSheetId = currentLinkedSheetRowId;
-      addDebugLog("INFO", "loadLinkedSheet start", { userId });
-      const { data, error } = await supabaseClient
-        .from("user_sheets")
-        .select("id, sheet_url, spreadsheet_id, last_synced_at")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-      if (error) {
-        setSheetBindStatus(`讀取綁定失敗：${error.message}`, true);
-        addDebugLog("ERROR", "loadLinkedSheet failed", { message: error.message });
-        return;
-      }
-      const row = Array.isArray(data) && data.length ? data[0] : null;
       if (!row) {
         if (previousSheetId) await deletePortfolioCache(userId, previousSheetId);
         currentLinkedSheetRowId = "";
@@ -2985,10 +2975,7 @@
         clearDashboardForUnlinkedSheet();
         statusText.textContent = "請先綁定 Google Sheet";
         configureAutoSync();
-        addDebugLog("INFO", "loadLinkedSheet done (no active sheet)", {
-          elapsedMs: Math.round(performance.now() - t0)
-        });
-        return;
+        return false;
       }
       if (previousSheetId && previousSheetId !== row.id) {
         await deletePortfolioCache(userId, previousSheetId);
@@ -3004,11 +2991,56 @@
       setSheetBindStatus(`已綁定：${row.spreadsheet_id}${synced}`);
       setSyncStatus(row.last_synced_at ? `已同步（${new Date(row.last_synced_at).toLocaleString("zh-TW")}）` : "待命");
       configureAutoSync();
+      return true;
+    }
+
+    async function loadLinkedSheet(userId) {
+      const t0 = performance.now();
+      if (!supabaseClient || !userId) return;
+      addDebugLog("INFO", "loadLinkedSheet start", { userId });
+      const { data, error } = await supabaseClient
+        .from("user_sheets")
+        .select("id, sheet_url, spreadsheet_id, last_synced_at")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      if (error) {
+        setSheetBindStatus(`讀取綁定失敗：${error.message}`, true);
+        addDebugLog("ERROR", "loadLinkedSheet failed", { message: error.message });
+        return;
+      }
+      const row = Array.isArray(data) && data.length ? data[0] : null;
+      await applyLinkedSheetRow(userId, row);
       addDebugLog("INFO", "loadLinkedSheet done", {
-        sheetRowId: row.id,
-        spreadsheetId: row.spreadsheet_id,
+        sheetRowId: row?.id || "",
+        spreadsheetId: row?.spreadsheet_id || "",
         elapsedMs: Math.round(performance.now() - t0)
       });
+    }
+
+    async function loadDashboardBootstrap(userId) {
+      const t0 = performance.now();
+      if (!supabaseClient || !userId) throw new Error("Supabase session is unavailable");
+      const { data, error } = await supabaseClient.rpc("get_dashboard_bootstrap", {});
+      if (error) throw error;
+      const payload = Array.isArray(data) ? data[0] : data;
+      if (!payload || typeof payload !== "object") {
+        throw new Error("Dashboard bootstrap returned an invalid response");
+      }
+
+      await Promise.all([
+        applyLinkedSheetRow(userId, payload.sheet || null),
+        applyCloudSettingsRow(payload.settings || null)
+      ]);
+      bootstrapPortfolioCache = payload.cache || null;
+      bootstrapPortfolioCacheReady = true;
+      addDebugLog("INFO", "dashboard bootstrap loaded", {
+        sheetRowId: payload.sheet?.id || "",
+        syncLogId: payload.cache?.syncLogId || "",
+        elapsedMs: Math.round(performance.now() - t0)
+      });
+      return payload;
     }
 
     async function unbindLinkedSheet() {
@@ -3279,6 +3311,8 @@
       }
       const session = await getSupabaseSessionWithRetry();
       if (!session) {
+        bootstrapPortfolioCacheReady = false;
+        bootstrapPortfolioCache = null;
         currentUserId = "";
         currentLinkedSheetRowId = "";
         authUserText.textContent = "未登入";
@@ -3309,10 +3343,19 @@
       sheetUrlInput.disabled = false;
       const savedMode = localStorage.getItem(syncModeStorageKey(currentUserId)) || "auto";
       setSyncMode(savedMode, { persist: false });
-      await Promise.all([
-        loadLinkedSheet(currentUserId),
-        loadCloudSettings(currentUserId)
-      ]);
+      bootstrapPortfolioCacheReady = false;
+      bootstrapPortfolioCache = null;
+      try {
+        await loadDashboardBootstrap(currentUserId);
+      } catch (error) {
+        addDebugLog("WARN", "dashboard bootstrap failed; using legacy queries", {
+          message: String(error?.message || error)
+        });
+        await Promise.all([
+          loadLinkedSheet(currentUserId),
+          loadCloudSettings(currentUserId)
+        ]);
+      }
       setAppLocked(false);
       addDebugLog("INFO", "ensureSupabaseAuth done", {
         userId: currentUserId,
@@ -3363,6 +3406,8 @@
           const signedOutUserId = currentUserId;
           if (signedOutUserId) void deletePortfolioCachesForUser(signedOutUserId);
           cacheSupabaseSession(null);
+          bootstrapPortfolioCacheReady = false;
+          bootstrapPortfolioCache = null;
           currentUserId = "";
           currentLinkedSheetRowId = "";
           clearDashboardForUnlinkedSheet();
@@ -3376,6 +3421,8 @@
           // to prevent the previous user's data from flashing on screen.
           if (currentUserId && currentUserId !== session.user.id) {
             void deletePortfolioCachesForUser(currentUserId);
+            bootstrapPortfolioCacheReady = false;
+            bootstrapPortfolioCache = null;
             currentUserId = "";
             currentLinkedSheetRowId = "";
             clearDashboardForUnlinkedSheet();
@@ -3725,6 +3772,9 @@
         let sbAccessToken = "";
 
         if (SUPABASE_LOGIN_ENABLED && supabaseClient && currentUserId) {
+          if (!currentLinkedSheetRowId) {
+            throw new Error("Please bind Google Sheet URL first.");
+          }
           if (!lastRenderedSyncLogId && currentLinkedSheetRowId) {
             const localT0 = performance.now();
             const localCache = await readPortfolioCache(currentUserId, currentLinkedSheetRowId);
@@ -3745,19 +3795,37 @@
 
           const cacheT0 = performance.now();
           let cacheJson = null;
-          const preferredCache = await loadPreferredCachedPortfolio();
-          cacheJson = preferredCache.cacheJson;
-          if (preferredCache.directError) {
-            addDebugLog("WARN", "Supabase direct cache read failed; used Render fallback", {
-              message: String(preferredCache.directError?.message || preferredCache.directError),
-              elapsedMs: Math.round(performance.now() - cacheT0)
-            });
-          } else {
-            addDebugLog("DEBUG", "Supabase direct cache read finished", {
+          if (bootstrapPortfolioCacheReady) {
+            cacheJson = bootstrapPortfolioCache;
+            bootstrapPortfolioCacheReady = false;
+            bootstrapPortfolioCache = null;
+            if (cacheJson?.syncLogId && cacheJson.syncLogId === lastRenderedSyncLogId) {
+              cacheJson = {
+                notModified: true,
+                cachedAt: cacheJson.cachedAt || lastRenderedSyncedAt,
+                syncLogId: cacheJson.syncLogId
+              };
+            }
+            addDebugLog("DEBUG", "bootstrap portfolio cache consumed", {
               found: !!cacheJson,
               notModified: !!cacheJson?.notModified,
               elapsedMs: Math.round(performance.now() - cacheT0)
             });
+          } else {
+            const preferredCache = await loadPreferredCachedPortfolio();
+            cacheJson = preferredCache.cacheJson;
+            if (preferredCache.directError) {
+              addDebugLog("WARN", "Supabase direct cache read failed; used Render fallback", {
+                message: String(preferredCache.directError?.message || preferredCache.directError),
+                elapsedMs: Math.round(performance.now() - cacheT0)
+              });
+            } else {
+              addDebugLog("DEBUG", "Supabase direct cache read finished", {
+                found: !!cacheJson,
+                notModified: !!cacheJson?.notModified,
+                elapsedMs: Math.round(performance.now() - cacheT0)
+              });
+            }
           }
 
           if (cacheJson?.notModified) {
